@@ -41,7 +41,66 @@ git clone https://github.com/olinkluzz1v/mcp-faultline.git
 cd mcp-faultline
 npm ci
 npm run build
+```
 
+### Guided local demo: a lost acknowledgement
+
+```bash
+node dist/cli.js demo --out reports/demo-lost-acknowledgement
+```
+
+This **scripted local filesystem demo** needs no API key, Docker, or external
+service. The first `write_file` completes, but an `after` fault replaces its
+acknowledgement with a timeout. Two bounded policies react to the results visible
+to the agent, using the same [task](tasks/demo/lost-acknowledgement.yaml),
+permissions, fault plan, and grading rules in separate fresh workspaces:
+
+| Policy | Response to the timeout | Completed writes | Actual grade |
+| --- | --- | --- | --- |
+| Naive retry | Retry the write once | 2 | **FAIL**: `file_written_exactly_once` |
+| Verify before retry | Read the file and confirm its intended contents | 1 | **PASS** |
+
+Both leave the intended contents on disk. The difference is the duplicate
+completed write, checked by the existing integrity grader. The verification
+policy stops without another write if it cannot confirm the contents. Neither
+policy sees the injection metadata or knows whether the timed-out write ran.
+
+The command prints expected and actual grades, observed completed-write counts,
+injection evidence, and paths to JSON, Markdown, and offline HTML reports:
+
+```text
+reports/demo-lost-acknowledgement/naive/report.{json,md,html}
+reports/demo-lost-acknowledgement/verify-before-retry/report.{json,md,html}
+```
+
+Open either `report.html` directly in a browser. Reports retain the actual grades;
+**“Demo verified both expected outcomes” does not mean both agents passed.** The
+naive agent remains FAIL, specifically because of the duplicate write; its state,
+policy, witness, and recovery checks pass.
+
+Demo exit codes (scoped to `demo`):
+
+- **0:** both expected outcomes, the applied after-timeout, completed writes, and
+  required grading evidence were verified.
+- **1:** an expectation or its evidence did not match. Reports are retained for
+  diagnosis. An arbitrary FAIL or a missing injection cannot verify the demo.
+- **2:** configuration, harness, or report-writing failure. Incomplete output
+  created by this invocation is removed where possible.
+
+`--out` is required and must name a **new directory**; existing files, directories,
+and symlinks are rejected without overwriting reports. Choose a new name to rerun.
+Parent directories are created as needed. The bundled fixture is resolved relative
+to the installed code, so the CLI also works from an unrelated working directory
+when invoked by its absolute path. Temporary agent workspaces are cleaned up;
+reports retain the trajectory, execution evidence, and actual file assertions.
+
+This demo does not verify a real LLM integration or establish exactly-once behavior
+for arbitrary external services. The evidence concerns this controlled local file
+executor and these two scripted policies.
+
+### Run the suite and convert reports
+
+```bash
 # Run the suite with the embedded agent
 node dist/cli.js run
 
@@ -134,6 +193,7 @@ More detail in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 | Command | Description |
 |---|---|
+| `demo --out <directory>` | Guided no-key lost-acknowledgement demo with two scripted policies |
 | `run` | Run the task suite with the embedded agent |
 | `list` | List available task YAML files |
 | `negative-controls` | Oracle validation: 5 agents × tasks, 21 entries |
@@ -220,7 +280,8 @@ npm run test:integrity-smoke    # integrity layer catches double-writes
 npm run test:idempotency-smoke  # mode: after produces a real double-write
 npm run test:agent              # structured tool results, execution evidence and replay
 npm run test:report             # fault statistics, provenance, output and CLI
-npm test                        # smoke, agent and reporting checks (build first)
+npm run test:demo               # local recovery demo, evidence and CLI exit behavior
+npm test                        # smoke, agent, reporting and demo checks (build first)
 ```
 
 Full suite (build, run, oracle, replay):
