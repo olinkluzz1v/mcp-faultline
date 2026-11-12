@@ -9,6 +9,9 @@ export const allowedTools = ['create_ticket', 'find_tickets'];
 // This is invocation configuration, never written to the user's Codex config.
 export function codexArguments({ model, workspace, output, sessionConfig }) {
   const values = {
+    // gpt-6.1-sol requires the bundled Code Mode runtime on CLI 0.167.2.
+    // This enables tool dispatch, not shell or filesystem access.
+    'features.code_mode': true, 'features.code_mode_host': true,
     model_provider: 'openai', approval_policy: 'never', default_permissions: 'ticket',
     web_search: 'disabled', project_doc_max_bytes: 0,
     'skills.include_instructions': false, 'skills.bundled.enabled': false,
@@ -25,7 +28,7 @@ export function codexArguments({ model, workspace, output, sessionConfig }) {
   };
   for (const feature of ['shell_tool', 'view_image', 'apps', 'plugins', 'multi_agent',
     'browser_use', 'browser_use_external', 'computer_use', 'image_generation',
-    'code_mode', 'code_mode_host', 'tool_suggest', 'skill_search',
+    'tool_suggest', 'skill_search',
     'skill_mcp_dependency_install', 'hooks', 'memories', 'sleep_tool', 'mcp_connection_sharing']) {
     values[`features.${feature}`] = false;
   }

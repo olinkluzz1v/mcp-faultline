@@ -187,3 +187,18 @@ Official references checked 2026-11-12:
 [configuration schema](https://developers.openai.com/codex/config-schema.json),
 [MCP](https://developers.openai.com/codex/mcp/), and
 [authentication](https://developers.openai.com/codex/auth/).
+
+### Code Mode runtime on CLI 0.167.2
+
+The gpt-6.1-sol invocation enables `features.code_mode` and
+`features.code_mode_host`. Disabling the host causes this model to fail closed
+before issuing MCP calls, even when the CLI exits zero. The Linux npm distribution
+bundles `codex-code-mode-host` beside its native `codex` executable; absence from
+PATH alone is not a missing-host diagnosis. No global configuration or package
+installation is needed for that distribution.
+
+The existing MCP allowlist and workspace-only read permissions remain in force.
+The evaluator still rejects runtime errors, missing MCP calls and unsupported
+activity, including unverified Code Mode wrappers. A successful runtime startup
+alone is not a valid baseline: agent calls and responses must correlate with the
+proxy capture and independent fixture evidence.

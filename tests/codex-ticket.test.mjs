@@ -294,6 +294,14 @@ test('evaluator rejects missing, stale, malformed, bypassed and mismatched evide
   const manifest = await json(join(run.output, 'run.json'));
   const session = { code: 0, signal: null, interruption: null, error: null };
   const mutations = [
+    ['runtime error despite successful turn', e => { e.agentEvents.splice(1, 0, {
+      type: 'item.completed', item: { id: 'runtime-error', type: 'error',
+        message: 'Code Mode is unavailable because code-mode host is disabled.' } }); }],
+    ['missing calls', e => { e.capture.toolCalls = []; }],
+    ['unverified wrapper activity', e => { e.agentEvents.splice(1, 0, {
+      type: 'item.completed', item: { id: 'wrapper', type: 'code_mode', status: 'completed' } }); }],
+    ['unauthorized shell activity', e => { e.agentEvents.splice(1, 0, {
+      type: 'item.completed', item: { id: 'shell', type: 'command_execution', command: 'cat state.json' } }); }],
     ['missing injection', e => { e.capture.faults = []; }],
     ['wrong mode', e => { e.capture.faults[0].mode = 'instead'; }],
     ['different fixture run', e => { e.state.runId = randomUUID(); }],
@@ -316,4 +324,22 @@ test('evaluator rejects missing, stale, malformed, bypassed and mismatched evide
     assert.equal(result.valid, false, name);
     assert.equal(result.verdict, null, name);
   }
+});
+
+
+test('Code Mode runtime is enabled without widening task permissions', async () => {
+  const { codexArguments } = await import('../examples/codex-ticket/config.mjs');
+  const args = codexArguments({ model: 'gpt-6.1-sol', workspace: '/tmp/agent',
+    output: '/tmp/evidence', sessionConfig: '/tmp/session.json' });
+  const config = Object.fromEntries(args.flatMap((value, i) => value === '-c'
+    ? [[args[i + 1].split('=')[0], args[i + 1].slice(args[i + 1].indexOf('=') + 1)]] : []));
+  assert.equal(config['features.code_mode'], 'true');
+  assert.equal(config['features.code_mode_host'], 'true');
+  for (const feature of ['shell_tool', 'apps', 'plugins', 'multi_agent', 'browser_use', 'computer_use']) {
+    assert.equal(config[`features.${feature}`], 'false');
+  }
+  assert.equal(config['permissions.ticket.filesystem'], '{"/"="deny",":workspace_roots"="read"}');
+  assert.equal(config['mcp_servers.faultline.enabled_tools'], '["create_ticket","find_tickets"]');
+  assert.ok(args.includes('--ignore-user-config'));
+  assert.equal(args[args.indexOf('--model') + 1], 'gpt-6.1-sol');
 });
