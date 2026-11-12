@@ -37,9 +37,14 @@ import {
  */
 export type ProxyClientEvent = Omit<ProxyEvent, 'index' | 'timestamp'>;
 
+/** Setup failed and its child cleanup also failed; callers must retain both. */
+export class ProxyClientCleanupError extends AggregateError {}
+
 export interface ProxyClientOptions {
   /** Proxy config — command, args, cwd, env, allowlist. */
   readonly config: ProxyConfig;
+  /** Allow CLI termination to interrupt an outstanding initialization request. */
+  readonly signal?: AbortSignal;
 
   /**
    * Called synchronously for every event the client produces.
@@ -125,8 +130,8 @@ export async function createProxyClient(
   // 2. Build the stdio transport.
   //
   //    We pass `cwd` and `env` straight through. When `env` is omitted,
-  //    the SDK inherits the parent's environment — acceptable for MVP,
-  //    documented as a limitation in the README.
+  //    the SDK inherits its default environment allowlist. Explicit env values
+  //    are passed only to the child, never emitted as capture metadata.
   const transport = new StdioClientTransport({
     command: config.command,
     args: [...config.args],
@@ -134,6 +139,9 @@ export async function createProxyClient(
     env: config.env ? { ...config.env } : undefined,
     stderr: 'pipe', // keep server logs out of our stdout
   });
+  // Do not let an unread stderr pipe block the child. It is not captured as
+  // tool data or copied into the session's credential-free metadata.
+  transport.stderr?.on('data', () => {});
 
   // 3. Create the SDK client.
   const client = new Client(
@@ -141,10 +149,21 @@ export async function createProxyClient(
     { capabilities: {} }
   );
 
+  // SDK initialization can itself call close() without awaiting it. Share the
+  // same completion promise so setup failure/abort waits for child cleanup.
+  const sdkClose = client.close.bind(client);
+  let closing: Promise<void> | undefined;
+  client.close = () => closing ??= sdkClose();
+
   // 4. Connect. Any failure here means the server could not start.
   try {
-    await client.connect(transport);
+    await client.connect(transport, { signal: opts.signal });
   } catch (err) {
+    try { await client.close(); }
+    catch (cleanupError) {
+      throw new ProxyClientCleanupError([err, cleanupError], 'Upstream setup cleanup failed');
+    }
+    if (opts.signal?.aborted && err === opts.signal.reason) throw err;
     const message = err instanceof Error ? err.message : String(err);
     emit(onEvent, {
       type: 'proxy_error',
@@ -194,16 +213,7 @@ export async function createProxyClient(
   });
 
   // 7. Close helper — idempotent.
-  let closed = false;
-  async function close(): Promise<void> {
-    if (closed) return;
-    closed = true;
-    try {
-      await client.close();
-    } catch {
-      // Already closed / transport dead — nothing to do.
-    }
-  }
+  const close = (): Promise<void> => client.close();
 
   return { client, exited, close };
 }

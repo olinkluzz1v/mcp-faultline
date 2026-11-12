@@ -69,7 +69,7 @@ export interface ProxyConfig {
 
   /**
    * Environment variables for the spawned server.
-   * When omitted, the child inherits the parent's environment.
+   * Merged with the SDK's default inherited environment allowlist.
    */
   readonly env?: Readonly<Record<string, string>>;
 
@@ -200,6 +200,8 @@ export interface ProxyToolCallRecord extends Omit<ToolCallRecord, 'executed'> {
   upstreamOutcome?: 'not_forwarded' | 'success' | 'tool_error' | 'unknown';
   /** Unmodified valid upstream MCP result, before any after replacement. */
   upstreamResult?: CallToolResult;
+  /** Exact MCP response produced by the bridge; not proof of client receipt. Absent for rejected requests. */
+  response?: CallToolResult;
   /** 1-based invocation number for this tool, allocated before awaiting a response. */
   callNumber?: number;
 }
@@ -234,6 +236,31 @@ export interface ProxyResult {
 
   /** Run duration in milliseconds. */
   readonly durationMs: number;
+}
+
+/** A proxy session snapshot, deliberately distinct from an embedded BatchReport. */
+export interface ProxyCapture {
+  kind: 'proxy-capture';
+  schemaVersion: 1;
+  runId: string;
+  startedAt: number;
+  endedAt: number;
+  /** Explicit allowlist of metadata: never serialize ProxyConfig.env or process.env. */
+  upstream?: { command: string; args: readonly string[]; cwd: string };
+  /** Absent when loading the requested plan failed. */
+  faultPlan?: readonly FaultInjection[];
+  events: readonly ProxyEvent[];
+  toolCalls: readonly ProxyToolCallRecord[];
+  faults: readonly ProxyFaultRecord[];
+  termination: {
+    reason: 'client_eof' | 'client_closed' | 'client_error' | 'signal' | 'upstream_disconnect' | 'setup_error';
+    signal?: 'SIGINT' | 'SIGTERM';
+  };
+  /** Session/cleanup outcome, not an agent grade or delivery guarantee. */
+  completion: 'completed' | 'interrupted' | 'failed';
+  cleanupSucceeded: boolean;
+  captureStatus: 'complete';
+  errors: readonly { phase: 'setup' | 'cleanup' | 'diagnostics'; message: string }[];
 }
 
 // ---------------------------------------------------------------------------

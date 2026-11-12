@@ -16,6 +16,7 @@ export type {
   ProxyActor,
   ProxyFaultRecord,
   ProxyToolCallRecord,
+  ProxyCapture,
   ProxyResult,
 } from './types.js';
 
@@ -32,7 +33,7 @@ export type {
   ProxyClientHandle,
   ProxyClientEvent,
 } from './client.js';
-export { createProxyClient } from './client.js';
+export { createProxyClient, ProxyClientCleanupError } from './client.js';
 
 // Server (face the external agent)
 export type {

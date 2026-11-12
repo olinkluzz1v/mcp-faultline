@@ -7,6 +7,11 @@ import { CallToolRequestSchema, ListToolsRequestSchema, McpError, ErrorCode } fr
 
 const directory = process.argv[2];
 writeFileSync(join(directory, 'upstream.pid'), String(process.pid));
+if (process.argv[3] === 'fail-startup') process.exit(7);
+if (process.argv[3] === 'hang-startup') {
+  process.stdin.resume();
+  await new Promise(() => {});
+}
 const server = new Server({ name: 'proxy-integration-fixture', version: '1' }, { capabilities: { tools: {} } });
 const names = ['echo', 'tool_error', 'schema_error', 'write_file', 'read_file', 'partial', 'protocol_error', 'invalid_result', 'disconnect'];
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -46,5 +51,11 @@ server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     isError: ['tool_error', 'schema_error'].includes(params.name),
   };
 });
-await server.connect(new StdioServerTransport());
+const transport = new StdioServerTransport();
+transport.onmessage = message => {
+  if (message.method === 'notifications/cancelled') {
+    appendFileSync(join(directory, 'cancellations.jsonl'), JSON.stringify(message.params) + '\n');
+  }
+};
+await server.connect(transport);
 process.stdin.on('end', () => { void server.close(); });

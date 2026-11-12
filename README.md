@@ -237,7 +237,7 @@ More detail in [ARCHITECTURE.md](./ARCHITECTURE.md).
 | `run` | Run the task suite with the embedded agent |
 | `list` | List available task YAML files |
 | `negative-controls` | Oracle validation: 5 agents × tasks, 21 entries |
-| `proxy` | stdio proxy between an external agent and a real MCP server |
+| `proxy [--capture <file.json>]` | stdio proxy with optional JSON session evidence |
 | `replay` | Re-run an agent against a recorded trajectory |
 | `report` | Convert saved BatchReport JSON to offline HTML without re-execution |
 
@@ -246,6 +246,14 @@ only to observed successful responses. Its SDK integration tests independently
 verify fixture writes, response forwarding, concurrent call identities, and
 disconnect uncertainty. See [proxy protocol and evidence](docs/proxy.md) for the
 tested behavior, API compatibility notes, and remaining limits.
+
+Use `--capture reports/proxy-session.json` with an existing parent directory and
+a fresh filename to retain calls, original upstream responses, exact produced
+responses, applied faults, and termination information. EOF finalizes the
+capture; signals and infrastructure/output failures exit nonzero. Captures are
+local protocol evidence, without agent grades or remote side-effect guarantees.
+Payloads and command arguments may contain sensitive data. See the
+[copyable SDK example and capture contract](docs/proxy.md#capture-a-session).
 
 ---
 

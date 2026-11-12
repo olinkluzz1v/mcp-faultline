@@ -109,13 +109,17 @@ export function createCli(): Command {
       'Optional task YAML — only its fault_injection array is used'
     )
     .option('--cwd <path>', 'Working directory for the spawned server')
+    .option('--capture <file.json>', 'Save proxy evidence on shutdown (new file; parent must exist)')
+    .allowExcessArguments(false)
+    .exitOverride(error => process.exit(error.exitCode === 0 ? 0 : 2))
     .action(async (opts) => {
       const code = await runProxyCommand({
         server: opts.server,
         task: opts.task,
         cwd: opts.cwd,
+        capture: opts.capture,
       });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   program

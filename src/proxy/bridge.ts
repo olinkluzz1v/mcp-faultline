@@ -22,7 +22,7 @@
  */
 
 import type { CallToolRequest, CallToolResult, ListToolsRequest, ListToolsResult } from '@modelcontextprotocol/sdk/types.js';
-import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolResultSchema, McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolCallResult } from '../mcp/types.js';
 import type { ProxyClientHandle } from './client.js';
 import type { ProxyServerHandle } from './server.js';
@@ -35,7 +35,8 @@ export type BridgeEvent = Omit<ProxyEvent, 'index' | 'timestamp'>;
 
 export interface BridgeOptions {
   readonly config: ProxyConfig;
-  readonly client: ProxyClientHandle;
+  /** A pending connection lets the front SDK transport consume input during startup. */
+  readonly client: ProxyClientHandle | Promise<ProxyClientHandle>;
   readonly faultRuntime: FaultRuntimeHandle;
   readonly onEvent: (event: BridgeEvent) => void;
 }
@@ -51,19 +52,47 @@ export interface BridgeHandle {
 }
 
 export async function createBridge(opts: BridgeOptions): Promise<BridgeHandle> {
-  const { client, faultRuntime, onEvent } = opts;
+  const { faultRuntime, onEvent } = opts;
+  const clientReady = Promise.resolve(opts.client);
+  const upstreamClosed = clientReady.then(client => client.exited, () => undefined);
   const toolCalls: ProxyToolCallRecord[] = [];
   const faults: ProxyFaultRecord[] = [];
   const counts = new Map<string, number>();
-  const pending = new Set<Promise<CallToolResult>>();
+  const pending = new Set<Promise<unknown>>();
+  const requests = new Set<AbortController>();
   let nextIndex = 0;
+  let closing: Promise<void> | undefined;
 
   function emit(event: BridgeEvent): void {
     try { onEvent(event); } catch { /* A broken sink must not take down the bridge. */ }
   }
 
-  async function handleListTools(request: ListToolsRequest): Promise<ListToolsResult> {
-    return client.client.listTools(request.params);
+  function track<T>(request: Promise<T>): Promise<T> {
+    pending.add(request);
+    void request.then(() => pending.delete(request), () => pending.delete(request));
+    return request;
+  }
+
+  async function forward<T>(send: (client: ProxyClientHandle, signal: AbortSignal) => Promise<T>): Promise<T> {
+    if (closing) throw new McpError(ErrorCode.ConnectionClosed, 'Proxy session closing');
+    const controller = new AbortController();
+    requests.add(controller);
+    try {
+      const client = await clientReady;
+      controller.signal.throwIfAborted();
+      return await send(client, controller.signal);
+    } finally {
+      // The SDK retains abort listeners after a request resolves. Discard its
+      // controller too, so shutdown cancels only outstanding requests.
+      requests.delete(controller);
+    }
+  }
+
+  function handleListTools(request: ListToolsRequest): Promise<ListToolsResult> {
+    return track(forward((client, signal) => {
+      emit({ type: 'request_forwarded', actor: 'proxy', message: 'tools/list', data: { method: 'tools/list' } });
+      return client.client.listTools(request.params, { signal });
+    }));
   }
 
   async function callTool(request: CallToolRequest): Promise<CallToolResult> {
@@ -78,13 +107,14 @@ export async function createBridge(opts: BridgeOptions): Promise<BridgeHandle> {
     let forwarded = false;
     let upstreamOutcome: NonNullable<ProxyToolCallRecord['upstreamOutcome']> = 'not_forwarded';
     let upstreamResult: CallToolResult | undefined;
+    let response: CallToolResult | undefined;
 
     try {
       const decision = faultRuntime.decide({ toolName, args, callNumber });
       const inject = (): CallToolResult => {
         if (!decision.inject) throw new Error('Missing injection decision');
         // Encode first: a failure to construct a response is not an injection.
-        const response = syntheticResponse(decision.result);
+        response = syntheticResponse(decision.result);
         result = decision.result;
         faults.push({ ...identity, mode: decision.mode, faultType: decision.faultType,
           schedule: decision.schedule, ...(decision.seed === undefined ? {} : { seed: decision.seed }) });
@@ -96,14 +126,16 @@ export async function createBridge(opts: BridgeOptions): Promise<BridgeHandle> {
       };
       if (decision.inject && decision.mode === 'instead') return inject();
 
-      forwarded = true;
-      upstreamOutcome = 'unknown';
-      emit({ type: 'request_forwarded', actor: 'proxy', message: `tools/call ${toolName}`,
-        data: { ...identity, method: 'tools/call' } });
       // Validate the MCP envelope, not the application's output schema. A
       // transparent proxy must retain even tool errors with structured data;
       // the external client can apply its own tool output-schema validation.
-      upstreamResult = await client.client.request({ method: 'tools/call', params: request.params }, CallToolResultSchema);
+      upstreamResult = await forward((client, signal) => {
+        forwarded = true;
+        upstreamOutcome = 'unknown';
+        emit({ type: 'request_forwarded', actor: 'proxy', message: `tools/call ${toolName}`,
+          data: { ...identity, method: 'tools/call' } });
+        return client.client.request({ method: 'tools/call', params: request.params }, CallToolResultSchema, { signal });
+      });
       upstreamOutcome = upstreamResult.isError === true ? 'tool_error' : 'success';
       emit({ type: 'response_received', actor: 'server', message: `tools/call ${toolName} response`,
         data: { ...identity, upstreamOutcome } });
@@ -118,7 +150,8 @@ export async function createBridge(opts: BridgeOptions): Promise<BridgeHandle> {
       } else {
         result = { status: 'success', data: upstreamResult };
       }
-      return upstreamResult;
+      response = upstreamResult;
+      return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result = { status: 'error', message };
@@ -127,28 +160,29 @@ export async function createBridge(opts: BridgeOptions): Promise<BridgeHandle> {
     } finally {
       toolCalls.push({ index, callNumber, toolName, args, result, startedAt,
         durationMs: Date.now() - startedAt, executed: forwarded ? 'unknown' : false,
-        forwarded, upstreamOutcome, ...(upstreamResult === undefined ? {} : { upstreamResult }) });
+        forwarded, upstreamOutcome, ...(upstreamResult === undefined ? {} : { upstreamResult }),
+        ...(response === undefined ? {} : { response }) });
       toolCalls.sort((a, b) => a.index - b.index);
     }
   }
 
   function handleCallTool(request: CallToolRequest): Promise<CallToolResult> {
-    const call = callTool(request);
-    pending.add(call);
-    void call.then(() => pending.delete(call), () => pending.delete(call));
-    return call;
+    return track(callTool(request));
   }
 
   const server = await createProxyServer({ onEvent: emit, onCallTool: handleCallTool, onListTools: handleListTools });
-  const closed = Promise.race([server.closed, client.exited]);
-  let closing: Promise<void> | undefined;
+  const closed = Promise.race([server.closed, upstreamClosed]);
   function close(): Promise<void> {
     return closing ??= (async () => {
-      // Closing the SDK client rejects outstanding requests. Let their finally
-      // blocks record uncertainty before closing the front and returning.
-      await client.close();
+      // Settle observations even if a transport close fails. Stop accepting
+      // new requests, and attempt both cleanups before reporting any failure.
+      for (const request of requests) request.abort(new McpError(ErrorCode.ConnectionClosed, 'Proxy session closing'));
+      const cleanup = await Promise.allSettled([
+        clientReady.then(client => client.close(), () => undefined), server.close(),
+      ]);
       await Promise.allSettled([...pending]);
-      await server.close();
+      const errors = cleanup.filter(r => r.status === 'rejected').map(r => r.reason);
+      if (errors.length) throw new AggregateError(errors, 'Proxy connection cleanup failed');
     })();
   }
 
