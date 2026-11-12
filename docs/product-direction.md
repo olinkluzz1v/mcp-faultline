@@ -18,8 +18,9 @@ The first example should be easy to explain: a ticket is created, its response
 is lost, and the agent retries. Did it create a duplicate, verify the first
 operation, or stop with an accurate explanation? Check independent test-service
 state against explicit expectations, rather than trusting the agent's claim.
-A ticket fixture is a proposed extension; current side-effect checks are
-file-based.
+The [ticket fixture example](../examples/codex-ticket/README.md) now implements
+this bounded oracle using independent local service state. Its live model
+validation is pending; the existing filesystem demo remains fully scripted.
 
 ## Shipped foundation
 
@@ -48,8 +49,16 @@ The current fork provides:
   original and produced responses, and termination outcome. EOF, signals and
   upstream loss share cleanup/finalization; capture-output errors stay nonzero.
   Captures are protocol evidence, without external-agent grading or replay.
-  A versioned, reproducible real-agent and model workflow still needs the
+  A versioned, reproducible real-agent and model workflow still needs the live
   end-to-end evidence specified below.
+- An opt-in [Codex CLI ticket example](../examples/codex-ticket/README.md) with a
+  normal task, baseline and after-timeout YAML scenario, fresh sessions/state,
+  invocation-scoped tool restrictions, and separate fixture-state verdicts.
+  Captures, agent events, inputs/configuration and an independent creation ledger
+  are retained. Offline controls check duplicate failures and verification before
+  retry; the actual Codex model attempt was blocked by authentication. This is
+  an implemented integration path awaiting live validation, not a completed
+  real-agent/model release claim.
 
 These pieces support the intended workflow; the real-agent integration and fresh
 external-agent regression experience below are still release goals. The local
@@ -80,18 +89,19 @@ specific workflow is enough; matching every competitor feature is not a goal.
 
 ## Remaining goals for the first focused release
 
-1. One documented integration tested end to end with a real agent and model,
-   with exact versions, configuration, and evidence. A proxy connection or
-   scripted fixture alone does not establish that integration.
+1. Complete live validation of the documented Codex ticket integration: one
+   baseline and three fresh fault runs with the same prompt/model, retaining all
+   outcomes and exact versions/configuration. A proxy connection or scripted
+   fixture alone does not establish that integration.
 2. Extend the shipped lost-acknowledgement demo with equally guided transient-timeout
    and incomplete-data scenarios. Each specifies acceptable outcomes, verifies
    independent state where applicable, and has a known bad control.
 3. Carry the existing reports and tested CLI/CI exit behavior into the supported
    external-agent workflow, with fresh evidence for that integration.
-4. Provide a documented path from a retained scenario to a fresh run against a
-   changed external agent in isolated test state. Existing YAML scenarios can
-   already be versioned. Reading a saved report or replaying old responses is
-   not evidence that a new agent version has fixed the problem.
+4. Validate the ticket example's fresh prompt/model rerun path with actual model
+   access. Existing YAML scenarios can already be versioned. Reading a saved
+   report or replaying old responses is not evidence that a new agent version
+   has fixed the problem.
 
 Use local disposable fixtures for the demonstration. Fault schedules and checks
 can be repeatable while model behavior varies: retain relevant configuration,

@@ -11,6 +11,12 @@ diagnostics to stderr; stdout contains only MCP JSON-RPC messages during a sessi
 Add `--capture <file.json>` to retain a versioned JSON session capture. Without
 that option the CLI creates no capture files. It does not produce an agent grade.
 
+The opt-in [Codex ticket example](../examples/codex-ticket/README.md) runs a
+separate, bounded state evaluator around this CLI. Its scripted controls are
+covered in normal CI; live model validation is pending authentication. That
+example does not add agent grading to the proxy or reinterpret its captures as
+embedded reports.
+
 ## Capture a session
 
 From the repository root after `npm ci` and `npm run build`, create the parent
