@@ -36,9 +36,13 @@ The current fork provides:
   [tool-result contract](../ARCHITECTURE.md#tool-results-and-execution-evidence).
 - JSON, Markdown, and standalone offline HTML reports, plus conversion of a saved
   batch to HTML without re-execution. See [reporting](reporting.md).
-- A guided [no-key local demo](../README.md#guided-local-demo-a-lost-acknowledgement)
-  of a lost write acknowledgement. Two scripted filesystem policies retain their
-  actual FAIL/PASS grades; the demo verifies both expected outcomes and their evidence.
+- Guided no-key local demos of a
+  [lost write acknowledgement](../README.md#guided-local-demo-a-lost-acknowledgement)
+  and a [transient timeout](../README.md#guided-local-demo-a-transient-timeout).
+  Each compares two bounded scripted filesystem policies in fresh workspaces,
+  retaining their actual FAIL/PASS grades while verifying the expected outcomes,
+  applied fault, execution evidence and file assertions. Lost acknowledgement
+  remains the default; `demo --scenario transient-timeout` selects the new scenario.
 - A [CI exit contract for `run`](../README.md#use-run-as-a-ci-check): success requires
   a nonempty passing batch and successful report writes; failed grades return `1`,
   configuration/infrastructure errors return `2`, and interruptions remain nonzero.
@@ -99,9 +103,9 @@ specific workflow is enough; matching every competitor feature is not a goal.
    ticket exercise. Other agent/model/CLI versions and broader fault scenarios
    still need their own fresh evidence; the four passing cases do not establish
    general compatibility or a reliability rate.
-2. Extend the shipped lost-acknowledgement demo with equally guided transient-timeout
-   and incomplete-data scenarios. Each specifies acceptable outcomes, verifies
-   independent state where applicable, and has a known bad control.
+2. Extend the shipped lost-acknowledgement and transient-timeout demos with an
+   equally guided incomplete-data scenario. Specify acceptable outcomes, verify
+   independent state where applicable, and include a known bad control.
 3. Carry the existing reports and tested CLI/CI exit behavior into the supported
    external-agent workflow, with fresh evidence for that integration.
 4. Validate the ticket example's fresh prompt/model rerun path with actual model

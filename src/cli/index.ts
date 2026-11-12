@@ -1,6 +1,6 @@
 // src/cli/index.ts
 
-import { Command, InvalidArgumentError } from 'commander';
+import { Command, InvalidArgumentError, Option } from 'commander';
 import { readdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { runTask } from './runner.js';
@@ -30,7 +30,7 @@ import { runDemoCommand } from './demo-command.js';
  *   proxy              — stdio proxy for external MCP agents
  *   replay             — re-run an agent against a recorded trajectory
  *   report             — convert a saved batch to offline HTML
- *   demo               — guided local lost-acknowledgement scenario
+ *   demo               — guided local timeout recovery scenarios
  */
 export function createCli(): Command {
   const program = new Command();
@@ -153,13 +153,15 @@ export function createCli(): Command {
 
   program
     .command('demo')
-    .description('Demonstrate recovery after a lost write acknowledgement (scripted, local, no API key)')
+    .description('Demonstrate timeout recovery (scripted, local, no API key)')
+    .addOption(new Option('--scenario <name>', 'Local filesystem failure scenario')
+      .choices(['lost-acknowledgement', 'transient-timeout']).default('lost-acknowledgement'))
     .requiredOption('-o, --out <directory>', 'Fresh directory for the two labeled reports')
     .allowExcessArguments(false)
     // Map parse/configuration errors only for demo; preserve help's zero exit.
     .exitOverride(error => process.exit(error.exitCode === 0 ? 0 : 2))
     .action(async (opts) => {
-      process.exitCode = await runDemoCommand({ out: opts.out });
+      process.exitCode = await runDemoCommand({ out: opts.out, scenario: opts.scenario });
     });
 
   return program;
