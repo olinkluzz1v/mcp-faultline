@@ -202,3 +202,8 @@ The evaluator still rejects runtime errors, missing MCP calls and unsupported
 activity, including unverified Code Mode wrappers. A successful runtime startup
 alone is not a valid baseline: agent calls and responses must correlate with the
 proxy capture and independent fixture evidence.
+
+The invocation also sets top-level `suppress_unstable_features_warning=true` to
+acknowledge the deliberately enabled Code Mode feature required by this model.
+This prevents the standard startup notice; actual runtime errors remain INVALID.
+No event filtering or evaluator exceptions are used.

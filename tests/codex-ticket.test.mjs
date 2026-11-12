@@ -333,6 +333,7 @@ test('Code Mode runtime is enabled without widening task permissions', async () 
     output: '/tmp/evidence', sessionConfig: '/tmp/session.json' });
   const config = Object.fromEntries(args.flatMap((value, i) => value === '-c'
     ? [[args[i + 1].split('=')[0], args[i + 1].slice(args[i + 1].indexOf('=') + 1)]] : []));
+  assert.equal(config.suppress_unstable_features_warning, 'true');
   assert.equal(config['features.code_mode'], 'true');
   assert.equal(config['features.code_mode_host'], 'true');
   for (const feature of ['shell_tool', 'apps', 'plugins', 'multi_agent', 'browser_use', 'computer_use']) {

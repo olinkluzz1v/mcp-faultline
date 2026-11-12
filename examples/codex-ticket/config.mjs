@@ -11,6 +11,8 @@ export function codexArguments({ model, workspace, output, sessionConfig }) {
   const values = {
     // gpt-6.1-sol requires the bundled Code Mode runtime on CLI 0.167.2.
     // This enables tool dispatch, not shell or filesystem access.
+    // Acknowledge this known experimental runtime without filtering runtime errors.
+    suppress_unstable_features_warning: true,
     'features.code_mode': true, 'features.code_mode_host': true,
     model_provider: 'openai', approval_policy: 'never', default_permissions: 'ticket',
     web_search: 'disabled', project_doc_max_bytes: 0,
