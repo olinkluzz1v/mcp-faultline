@@ -20,7 +20,9 @@ export interface AgentTool {
     description: string;
     /**
      * Execute the tool with given arguments.
-     * Returns result data, or throws on error.
+     * Returns raw result data, or throws on error. Wrappers can throw
+     * ToolResultError to preserve a structured ToolCallResult in agent history.
+     * A status field inside ordinary returned data has no control meaning.
      */
     execute(args: unknown): Promise<unknown>;
   }

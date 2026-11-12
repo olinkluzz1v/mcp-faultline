@@ -15,3 +15,5 @@
 
 export * from './types.js';
 export * from './embedded.js';
+export { ToolResultError, PolicyViolationError } from './tool-result.js';
+export type { ToolFailureResult } from './tool-result.js';

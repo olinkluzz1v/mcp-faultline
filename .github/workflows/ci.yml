@@ -62,6 +62,9 @@ jobs:
       - name: Idempotency smoke
         run: npm run test:idempotency-smoke
 
+      - name: Embedded tool results and replay
+        run: npm run test:agent
+
       - name: Report statistics and output
         run: npm run test:report
 

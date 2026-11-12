@@ -37,8 +37,9 @@ import type {
   ToolCallResult,
   Trajectory,
 } from '../mcp/types.js';
-import { buildToolCallRecord } from '../mcp/recorder.js';
+import { buildToolCallRecord, didExecutionSucceed } from '../mcp/recorder.js';
 import { EmbeddedAgent } from '../agent/embedded.js';
+import { deliverToolResult } from '../agent/tool-result.js';
 import type { AgentContext, AgentTool } from '../agent/types.js';
 import { grade } from '../grader/grader.js';
 import type { Task } from '../task/schema.js';
@@ -185,14 +186,15 @@ async function seedWorkspace(
  *     (toolName, args, callNumber).
  *   - If the source call was a synthetic fault (`executed: false`),
  *     we reproduce the synthetic result — no disk touch.
- *   - If the source call actually executed (`executed: true`), we
- *     return the recorded result. For write-like tools we ALSO
- *     perform the write on the fresh sandbox so the end state matches.
+ *   - If the source execution completed successfully, write-like tools
+ *     reproduce the side effect on the fresh sandbox. Failed attempts only
+ *     return the recorded failure; partial side effects cannot be reconstructed.
  *   - If no matching source call exists (agent diverged), we throw
  *     a clear error — replay has failed, which is itself a signal.
  *
- * The `executed` flag on the recorded call is the key signal: it
- * tells us whether the source run touched the disk.
+ * Execution flags retain the source evidence, including for read-only tools
+ * whose responses are replayed without actual I/O. Legacy records without
+ * executionSucceeded retain their historical executed-only interpretation.
  */
 function buildReplayTools(
   sandbox: TempFolderSandbox,
@@ -287,10 +289,11 @@ function makeReplayTool(
           startedAt,
           endedAt: Date.now(),
           executed: false,
+          executionSucceeded: false,
         });
         await recorder.afterCall(record);
 
-        throw new PolicyViolationError(toolName, 'forbidden_tool');
+        return deliverToolResult(policyResult);
       }
 
       await recorder.recordEvent({
@@ -323,85 +326,47 @@ function makeReplayTool(
           startedAt,
           endedAt: Date.now(),
           executed: false,
+          executionSucceeded: false,
         });
         await recorder.afterCall(record);
         throw new Error(message);
       }
 
-      // ─── Honor the source mode ───
-      const sourceResult = sourceCall.result;
-
-      // Case A: source was synthetic (not executed on disk).
-      if (!sourceCall.executed) {
-        await recorder.recordEvent({
-          actor: 'executor',
-          type: 'tool_execution',
-          toolName,
-          args,
-          payload: {
-            status: sourceResult.status,
-            synthetic: true,
-            mode: sourceResult.status === 'timeout' ? 'after' : 'instead',
-            replay: true,
-          },
-        });
-
-        const record = buildToolCallRecord({
-          index,
-          toolName,
-          args,
-          result: sourceResult,
-          startedAt,
-          endedAt: Date.now(),
-          executed: false,
-        });
-        await recorder.afterCall(record);
-
-        if (sourceResult.status === 'success') {
-          // Synthetic success — return the data, no disk touch.
-          return (sourceResult as { status: 'success'; data: unknown }).data;
+      // Preserve the source outcome without treating an attempted but failed
+      // write as evidence of a completed side effect. Legacy records retain
+      // their original executed-only interpretation.
+      let result = sourceCall.result;
+      let executionSucceeded = sourceCall.executionSucceeded;
+      if (didExecutionSucceed(sourceCall)) {
+        try {
+          await performReplaySideEffect(toolName, args, sandbox);
+        } catch (error) {
+          result = { status: 'error', message: error instanceof Error ? error.message : String(error) };
+          executionSucceeded = false;
         }
-        throw makeSyntheticError(sourceResult);
       }
-
-      // Case B: source actually executed. Perform the side-effect
-      // (for write-like tools) and reproduce the recorded result.
-      await performReplaySideEffect(toolName, args, sandbox);
 
       await recorder.recordEvent({
         actor: 'executor',
         type: 'tool_execution',
         toolName,
         args,
-        payload: { status: sourceResult.status, replay: true },
+        payload: { status: result.status, replay: true },
       });
 
       const record = buildToolCallRecord({
         index,
         toolName,
         args,
-        result: sourceResult,
+        result,
         startedAt,
         endedAt: Date.now(),
-        executed: true,
+        executed: sourceCall.executed,
+        executionSucceeded,
       });
       await recorder.afterCall(record);
 
-      if (sourceResult.status === 'success') {
-        return (sourceResult as { status: 'success'; data: unknown }).data;
-      }
-      if (sourceResult.status === 'timeout') {
-        // mode: 'after' fault — side effect happened, response is synthetic.
-        throw makeSyntheticError(sourceResult);
-      }
-      if (sourceResult.status === 'error') {
-        throw makeSyntheticError(sourceResult);
-      }
-      if (sourceResult.status === 'malformed') {
-        throw makeSyntheticError(sourceResult);
-      }
-      // policy_violation shouldn't reach here (handled above).
-      throw new Error(`replay: unexpected result status ${sourceResult.status}`);
+      return deliverToolResult(result);
     },
   };
 }
@@ -413,9 +378,8 @@ function makeReplayTool(
 /**
  * Find a matching source call by (toolName, args, callNumber).
  *
- * Matching by call number keeps replay robust to identical
- * repeated calls — the Nth call to the same tool with the same
- * args maps to the Nth recorded call.
+ * callNumber is per tool, not per argument combination. Select that
+ * occurrence first, then verify its arguments to detect divergence.
  */
 function findSourceCall(
   source: RunResult,
@@ -426,9 +390,8 @@ function findSourceCall(
   let seen = 0;
   for (const call of source.trajectory.calls) {
     if (call.toolName !== toolName) continue;
-    if (!argsEqual(call.args, args)) continue;
     seen++;
-    if (seen === callNumber) return call;
+    if (seen === callNumber) return argsEqual(call.args, args) ? call : undefined;
   }
   return undefined;
 }
@@ -498,31 +461,6 @@ async function performReplaySideEffect(
       // Read-only or distractor tool — no side-effect to reproduce.
       return;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Error helpers (mirror of runner.ts)
-// ---------------------------------------------------------------------------
-
-class PolicyViolationError extends Error {
-  readonly toolName: string;
-  readonly reason: string;
-  constructor(toolName: string, reason: string) {
-    super(`Policy violation: tool "${toolName}" is forbidden (${reason})`);
-    this.name = 'PolicyViolationError';
-    this.toolName = toolName;
-    this.reason = reason;
-  }
-}
-
-function makeSyntheticError(result: ToolCallResult): Error {
-  if (result.status === 'timeout') return new Error(result.message);
-  if (result.status === 'error') return new Error(result.message);
-  if (result.status === 'malformed') return new Error(result.message);
-  if (result.status === 'policy_violation') {
-    return new PolicyViolationError(result.tool, result.reason);
-  }
-  return new Error('Synthetic fault');
 }
 
 // ---------------------------------------------------------------------------

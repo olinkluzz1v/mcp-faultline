@@ -10,10 +10,14 @@ import { TrajectoryRecorder } from '../mcp/observer.js';
 import type { ToolCallResult, Trajectory } from '../mcp/types.js';
 import { buildToolCallRecord } from '../mcp/recorder.js';
 import { EmbeddedAgent } from '../agent/embedded.js';
+import { deliverToolResult } from '../agent/tool-result.js';
 import type { AgentContext, AgentTool } from '../agent/types.js';
 import { PlanFaultInjector } from '../fault/injector.js';
 import { grade } from '../grader/grader.js';
 import type { RunResult, InjectedFault } from '../report/types.js';
+
+// Preserve the existing public import path.
+export { PolicyViolationError } from '../agent/tool-result.js';
 
 /**
  * A single run — one task, one execution.
@@ -131,11 +135,8 @@ async function seedWorkspace(
  *   - `nextIndex`    : global monotonic index for ToolCallRecord
  *   - `nextCallNum`  : per-tool counter for fault matching (1-based)
  *
- * This is important because the recorder's `callCount` is only
- * incremented *after* a call is recorded — which never happens
- * for `mode: instead` faults (they throw before afterCall). Using
- * a local counter guarantees consistent, monotonic numbering
- * regardless of how a call terminates.
+ * Allocate call identity at entry, before policy, injection, or execution.
+ * Each wrapper invocation is recorded once, regardless of its final status.
  */
 function buildTools(
   sandbox: TempFolderSandbox,
@@ -239,10 +240,11 @@ function makeTool(
           startedAt,
           endedAt: Date.now(),
           executed: false,
+          executionSucceeded: false,
         });
         await recorder.afterCall(record);
 
-        throw new PolicyViolationError(toolName, 'forbidden_tool');
+        return deliverToolResult(policyResult);
       }
 
       // Policy allowed
@@ -280,113 +282,44 @@ function makeTool(
           startedAt,
           endedAt: Date.now(),
           executed: false,
+          executionSucceeded: false,
         });
         await recorder.afterCall(record);
-        throw makeSyntheticError(decision.result);
+        return deliverToolResult(decision.result);
       }
 
       // ─── Step 4: real execution (mode 'none' or 'after') ───
+      let result: ToolCallResult;
+      let executionSucceeded = false;
       try {
         const data = await executeRealTool(toolName, args, sandbox);
-
-        // A failed real execution never reaches the after-mode injection.
-        if (decision.mode === 'after') {
-          injectedFaults.push({ faultType: decision.faultType, toolName, callNumber, mode: decision.mode });
-        }
-
-        await recorder.recordEvent({
-          actor: 'executor',
-          type: 'tool_execution',
-          toolName,
-          args,
-          payload: {
-            status: 'success',
-            mode: decision.mode === 'after' ? 'after' : 'normal',
-          },
-        });
-
-        const finalResult: ToolCallResult =
-          decision.mode === 'after'
-            ? decision.result
-            : { status: 'success', data };
-
-        const record = buildToolCallRecord({
-          index,
-          toolName,
-          args,
-          result: finalResult,
-          startedAt,
-          endedAt: Date.now(),
-          executed: true,
-        });
-        await recorder.afterCall(record);
-
-        if (decision.mode === 'after') {
-          throw makeSyntheticError(decision.result);
-        }
-        return data;
+        executionSucceeded = true;
+        result = { status: 'success', data };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-
-        await recorder.recordEvent({
-          actor: 'executor',
-          type: 'tool_execution',
-          toolName,
-          args,
-          payload: { status: 'error', message },
-        });
-
-        const record = buildToolCallRecord({
-          index,
-          toolName,
-          args,
-          result: { status: 'error', message },
-          startedAt,
-          endedAt: Date.now(),
-          executed: false,
-        });
-        await recorder.afterCall(record);
-        throw error;
+        result = { status: 'error', message };
       }
+
+      await recorder.recordEvent({
+        actor: 'executor', type: 'tool_execution', toolName, args,
+        payload: executionSucceeded
+          ? { status: 'success', mode: decision.mode === 'after' ? 'after' : 'normal' }
+          : { status: 'error', message: result.status === 'error' ? result.message : undefined },
+      });
+
+      // Replace only a successful real response. Delivery is outside the
+      // execution catch: a synthetic failure must not become a second call.
+      if (executionSucceeded && decision.mode === 'after') {
+        injectedFaults.push({ faultType: decision.faultType, toolName, callNumber, mode: decision.mode });
+        result = decision.result;
+      }
+      await recorder.afterCall(buildToolCallRecord({
+        index, toolName, args, result, startedAt, endedAt: Date.now(),
+        executed: true, executionSucceeded,
+      }));
+      return deliverToolResult(result);
     },
   };
-}
-
-/**
- * Error thrown when the policy gate denies a tool call.
- *
- * The agent receives this as a normal error — it can decide how to
- * respond (retry, fallback, abort).
- */
-export class PolicyViolationError extends Error {
-  readonly toolName: string;
-  readonly reason: string;
-
-  constructor(toolName: string, reason: string) {
-    super(`Policy violation: tool "${toolName}" is forbidden (${reason})`);
-    this.name = 'PolicyViolationError';
-    this.toolName = toolName;
-    this.reason = reason;
-  }
-}
-
-/**
- * Throw an error whose message describes a synthetic fault result.
- */
-function makeSyntheticError(result: ToolCallResult): Error {
-  if (result.status === 'timeout') {
-    return new Error(result.message);
-  }
-  if (result.status === 'error') {
-    return new Error(result.message);
-  }
-  if (result.status === 'malformed') {
-    return new Error(result.message);
-  }
-  if (result.status === 'policy_violation') {
-    return new PolicyViolationError(result.tool, result.reason);
-  }
-  return new Error('Synthetic fault');
 }
 
 /**

@@ -203,8 +203,9 @@ Honest list. These are the things that are not done yet.
 - **One external agent tested.** Cline. Claude Code, Cursor, etc. are untested.
 - **No LLM judge.** Everything is deterministic. No model in the grading loop.
 - **Fault statistics are observational.** Mixed-fault runs contribute to multiple groups; the report does not identify which fault caused a failure. Older runs without injection metadata are marked as unknown.
-- **`EmbeddedAgent` loses status detail.** The history always records "error", not the specific status. Known bug.
+- **Execution is not proof of a side effect.** Embedded records distinguish an invoked executor (`executed`) from successful completion (`executionSucceeded`). Failed I/O may leave partial effects; replay cannot reconstruct those. Proxy transport errors still cannot establish whether a remote tool ran.
 - **Replay is single-run.** No batch replay, no agent-vs-agent comparison yet.
+- **Older duplicate records remain ambiguous.** Replay does not repair trajectories recorded by the former `after` duplication bug. Re-run the task for a fresh trajectory; saved-report conversion keeps historical evidence and grades unchanged.
 
 ---
 
@@ -217,8 +218,9 @@ npm run dev             # tsc --watch
 npm run test:proxy-smoke        # proxy intercepts and injects faults
 npm run test:integrity-smoke    # integrity layer catches double-writes
 npm run test:idempotency-smoke  # mode: after produces a real double-write
+npm run test:agent              # structured tool results, execution evidence and replay
 npm run test:report             # fault statistics, provenance, output and CLI
-npm test                        # all smoke and reporting checks (build first)
+npm test                        # smoke, agent and reporting checks (build first)
 ```
 
 Full suite (build, run, oracle, replay):
@@ -240,6 +242,12 @@ A few decisions worth explaining.
 **Security is audited, not blocked.** The stdio proxy spawns subprocesses. Rather than blocking unknown commands, we warn and record. Every spawn is logged in the trajectory. The allowlist defaults to `node`, `npx`, `python`, `python3`.
 
 **Replay is real re-execution.** Replaying a trajectory does not just dump the old results. Write tools run again on a fresh sandbox. Read tools return recorded data. The end state matches.
+
+**Embedded results preserve their status.** The next agent step receives the
+complete structured result, including timeout, malformed response, error code,
+or policy denial details. Synthetic successes return their intended data.
+`AgentTool.execute()` keeps its data-or-throw API; ordinary payloads with a
+`status` field remain data. See [the result and compatibility contract](ARCHITECTURE.md#tool-results-and-execution-evidence).
 
 ---
 
