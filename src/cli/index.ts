@@ -16,6 +16,7 @@ import type {
 import { runProxyCommand } from './proxy-command.js';
 import { runReplayCommand } from './replay-command.js';
 import { runReportCommand } from './report-command.js';
+import { runDemoCommand } from './demo-command.js';
 
 /**
  * CLI for MCP-Faultline.
@@ -27,6 +28,7 @@ import { runReportCommand } from './report-command.js';
  *   proxy              — stdio proxy for external MCP agents
  *   replay             — re-run an agent against a recorded trajectory
  *   report             — convert a saved batch to offline HTML
+ *   demo               — guided local lost-acknowledgement scenario
  */
 export function createCli(): Command {
   const program = new Command();
@@ -133,6 +135,17 @@ export function createCli(): Command {
     .option('--force', 'Replace an existing regular output file', false)
     .action(async (source: string, opts) => {
       process.exitCode = await runReportCommand({ source, out: opts.out, force: opts.force });
+    });
+
+  program
+    .command('demo')
+    .description('Demonstrate recovery after a lost write acknowledgement (scripted, local, no API key)')
+    .requiredOption('-o, --out <directory>', 'Fresh directory for the two labeled reports')
+    .allowExcessArguments(false)
+    // Map parse/configuration errors only for demo; preserve help's zero exit.
+    .exitOverride(error => process.exit(error.exitCode === 0 ? 0 : 2))
+    .action(async (opts) => {
+      process.exitCode = await runDemoCommand({ out: opts.out });
     });
 
   return program;
