@@ -56,6 +56,21 @@ The `run` command writes `reports/report.json`, `reports/report.md`, and `report
 
 All three formats include results by injected fault type. A run counts once per type even if that fault is injected repeatedly; injection counts are shown separately. Runs with several types appear in several groups. [Read the counting rules and limitations](docs/reporting.md#counting-rules) before comparing percentages.
 
+Convert a saved batch to offline HTML without running agents or tasks again:
+
+```bash
+node dist/cli.js report saved-report.json --out report.html
+# Explicitly replace an existing output file:
+node dist/cli.js report saved-report.json --out report.html --force
+```
+
+The command validates the batch, preserves its grades and metadata, and rebuilds
+all statistics from its runs. Legacy runs without injection metadata remain
+unknown. No `tasks` directory is needed. `--out` is required, its parent directory
+must exist, and the input is never overwritten, even with `--force`. Invalid
+input and write failures produce a message and a nonzero exit code. See
+[saved-report conversion](docs/reporting.md#convert-a-saved-report) for details.
+
 ---
 
 ## A failure the grader actually caught
@@ -124,6 +139,7 @@ More detail in [ARCHITECTURE.md](./ARCHITECTURE.md).
 | `negative-controls` | Oracle validation: 5 agents × tasks, 21 entries |
 | `proxy` | stdio proxy between an external agent and a real MCP server |
 | `replay` | Re-run an agent against a recorded trajectory |
+| `report` | Convert saved BatchReport JSON to offline HTML without re-execution |
 
 ---
 

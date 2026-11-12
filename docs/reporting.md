@@ -27,6 +27,46 @@ sample limitations and expandable run details. Percentages always appear with
 their sample counts. Narrow screens can scroll each table horizontally; all
 essential information is available without hovering or enabling JavaScript.
 
+## Convert a saved report
+
+```bash
+node dist/cli.js report saved-report.json --out report.html
+node dist/cli.js report saved-report.json --out report.html --force
+```
+
+`report` reads an existing **BatchReport** JSON file and writes the same standalone
+HTML format as `run`. It does not load task YAML, execute agents or tools, replay
+trajectories, or grade results again. It works from a directory without `tasks`;
+input and output paths are resolved relative to the current directory.
+
+Before rendering, the command validates the `meta`, `runs`, and `stats` batch
+envelope and the nested run fields, including grades, trajectories, and any
+injection records. Metadata includes a valid numeric timestamp, nonnegative
+durations, and integer task/run counts. Field types are not coerced and missing
+grades are not invented. Unknown extra metadata is retained. Individual
+`RunResult` objects and raw proxy records are not supported by this command.
+
+All aggregate statistics are recalculated with `computeStats` from the validated
+runs. The saved `stats` must be an object, but its contents are ignored, so stale
+or incomplete summaries cannot determine the displayed results. Original grades
+and metadata, including the generation timestamp, are preserved. Older batches
+without `injectedFaults` are supported: missing provenance remains **unknown**,
+while an explicit empty array means known zero injections.
+
+`--out` is required and names a file, not a directory. Its parent directory must
+already exist. Existing output is preserved unless `--force` is given. Even
+with `--force`, the output cannot be the input or a hard-link alias of it;
+output symlinks (including dangling links) are rejected. Input symlinks can be
+read normally. Rendering completes in a temporary file before the output is
+installed; concurrent conversions cannot overwrite an output without `--force`.
+Forced replacement replaces the file rather than truncating a linked target.
+
+A missing/unreadable input, malformed JSON, invalid batch structure, existing
+output without `--force`, or a failed write produces a clear error and a nonzero
+exit code. Validation happens before writing, so malformed input cannot replace
+an existing output. The source file is never modified. HTML escaping and the
+no-script, no-external-assets offline contract are unchanged.
+
 ## Counting rules
 
 The embedded runner records `RunResult.injectedFaults`, an array of
@@ -103,6 +143,9 @@ npm run test:all
 
 `npm run test:report` uses Node's built-in test runner and tests hand-calculated
 rates, repeated and mixed fault types, empty/legacy data, actual runner injection
-boundaries, escaping, output files and the CLI opt-out. CI runs this suite and
+boundaries, escaping, output files and the CLI opt-out. Saved-report CLI tests
+also cover nested validation, stale statistics, conversion without task files,
+input aliases, explicit overwrite permission, and concurrent output creation.
+CI runs this suite and
 uploads HTML with JSON/Markdown. See the implementation plan for the initial
 baseline; final validation evidence is recorded alongside the change.

@@ -15,6 +15,7 @@ import type {
 } from '../agent/embedded.js';
 import { runProxyCommand } from './proxy-command.js';
 import { runReplayCommand } from './replay-command.js';
+import { runReportCommand } from './report-command.js';
 
 /**
  * CLI for MCP-Faultline.
@@ -25,6 +26,7 @@ import { runReplayCommand } from './replay-command.js';
  *   negative-controls  — run oracle validation (negative controls)
  *   proxy              — stdio proxy for external MCP agents
  *   replay             — re-run an agent against a recorded trajectory
+ *   report             — convert a saved batch to offline HTML
  */
 export function createCli(): Command {
   const program = new Command();
@@ -121,6 +123,16 @@ export function createCli(): Command {
         tasksDir: opts.tasks,
       });
       process.exit(code);
+    });
+
+  program
+    .command('report')
+    .description('Convert a saved BatchReport JSON to offline HTML without running tasks')
+    .argument('<path>', 'Path to a BatchReport JSON file')
+    .requiredOption('-o, --out <path>', 'Destination HTML file (parent directory must exist)')
+    .option('--force', 'Replace an existing regular output file', false)
+    .action(async (source: string, opts) => {
+      process.exitCode = await runReportCommand({ source, out: opts.out, force: opts.force });
     });
 
   return program;

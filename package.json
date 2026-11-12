@@ -14,7 +14,7 @@
     "start": "node dist/index.js",
     "clean": "rm -rf dist dist-test",
     "test": "npm run test:proxy-smoke && npm run test:integrity-smoke && npm run test:idempotency-smoke && npm run test:report",
-    "test:report": "node --test tests/report-stats.test.mjs tests/report-output.test.mjs",
+    "test:report": "node --test tests/report-stats.test.mjs tests/report-output.test.mjs tests/report-command.test.mjs",
     "test:proxy-smoke": "node dist/testing/proxy-smoke.js",
     "test:integrity-smoke": "node dist/testing/integrity-smoke.js",
     "test:idempotency-smoke": "node dist/testing/idempotency-smoke.js",
