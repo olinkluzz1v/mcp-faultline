@@ -5,8 +5,13 @@ import { loadTask } from '../task/loader.js';
 export const DEMO_PATH = 'receipt.txt';
 export const DEMO_CONTENT = 'recovery demo complete';
 
-export function loadDemoTask() {
-  return loadTask(fileURLToPath(new URL('../../tasks/demo/lost-acknowledgement.yaml', import.meta.url)));
+export type DemoScenario = 'lost-acknowledgement' | 'transient-timeout';
+
+export function loadDemoTask(scenario: DemoScenario = 'lost-acknowledgement') {
+  if (scenario !== 'lost-acknowledgement' && scenario !== 'transient-timeout') {
+    throw new Error(`Unknown demo scenario: ${scenario}`);
+  }
+  return loadTask(fileURLToPath(new URL(`../../tasks/demo/${scenario}.yaml`, import.meta.url)));
 }
 
 function write(): AgentStepResult {
@@ -48,3 +53,36 @@ export const DEMO_POLICIES = [
 ] as const;
 
 export type DemoPolicyId = typeof DEMO_POLICIES[number]['id'];
+
+export const STOP_ON_TIMEOUT_REASON = 'Write timed out; stopped without retrying.';
+
+// A retry is allowed only after the first visible timeout. Even a success must
+// acknowledge the intended write; unexpected data or a second failure stops.
+function transientStep(retry: boolean): AgentStep {
+  return async ({ history }) => {
+    if (history.length === 0) return write();
+    const last = history[history.length - 1];
+    const expectedHistory = history.length === 1 || (retry && history.length === 2
+      && history[0].toolName === 'write_file' && history[0].result.status === 'timeout');
+    if (expectedHistory && last.toolName === 'write_file') {
+      if (last.result.status === 'success') {
+        const data = last.result.data;
+        if (data && typeof data === 'object' && 'written' in data && 'bytes' in data
+          && data.written === DEMO_PATH && data.bytes === DEMO_CONTENT.length) {
+          return { action: 'finish', message: 'Write acknowledged.' };
+        }
+      }
+      if (history.length === 1 && last.result.status === 'timeout') {
+        return retry ? write() : { action: 'abort', reason: STOP_ON_TIMEOUT_REASON };
+      }
+    }
+    return { action: 'abort', reason: 'Write was not acknowledged; retry limit reached or unexpected result.' };
+  };
+}
+
+export const TRANSIENT_TIMEOUT_POLICIES = [
+  { id: 'stop-on-timeout', label: 'Stop on timeout', step: transientStep(false) },
+  { id: 'retry-once', label: 'Retry once', step: transientStep(true) },
+] as const;
+
+export type TransientTimeoutPolicyId = typeof TRANSIENT_TIMEOUT_POLICIES[number]['id'];

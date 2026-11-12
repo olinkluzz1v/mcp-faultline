@@ -49,6 +49,9 @@ npm run build
 node dist/cli.js demo --out reports/demo-lost-acknowledgement
 ```
 
+Lost acknowledgement remains the default; it can also be selected explicitly
+with `--scenario lost-acknowledgement`.
+
 This **scripted local filesystem demo** needs no API key, Docker, or external
 service. The first `write_file` completes, but an `after` fault replaces its
 acknowledgement with a timeout. Two bounded policies react to the results visible
@@ -78,9 +81,50 @@ Open either `report.html` directly in a browser. Reports retain the actual grade
 naive agent remains FAIL, specifically because of the duplicate write; its state,
 policy, witness, and recovery checks pass.
 
-Demo exit codes (scoped to `demo`):
+### Guided local demo: a transient timeout
 
-- **0:** both expected outcomes, the applied after-timeout, completed writes, and
+```bash
+node dist/cli.js demo --scenario transient-timeout --out reports/demo-transient-timeout
+```
+
+This second **scripted local filesystem demo** uses an `instead` timeout on the
+first `write_file` call: the real executor does **not** run for that call. Two
+policies share the same [task](tasks/demo/transient-timeout.yaml), permissions,
+fault plan, and grading rules, each in a fresh workspace:
+
+| Policy | Response to the timeout | Completed writes | Actual grade |
+| --- | --- | --- | --- |
+| Stop on timeout | Abort without retrying | 0 | **FAIL**: required file is missing |
+| Retry once | Retry the intended write once | 1 | **PASS**: intended contents and `file_written_exactly_once` |
+
+Both react only to visible tool results. Retry-once stops on a second timeout,
+another failure, or an unexpected write acknowledgement; it never retries again.
+With no injected fault, both policies write once and pass (covered by tests).
+
+The negative control must fail for the expected reason: `file_exists` and
+`file_contains` fail because the file is absent, the state-change witness fails,
+`file_written_exactly_once` observes zero writes, and recovery is `abort → failed`.
+Policy checks still pass. The positive control must have the intended contents,
+one completed real write, and successful retry recovery. Verification also
+requires exactly one applied `instead` timeout and explicit evidence that the
+first call did not execute or complete. An unrelated error cannot stand in for
+this evidence. The existing grader and recorded grades are unchanged.
+
+```text
+reports/demo-transient-timeout/stop-on-timeout/report.{json,md,html}
+reports/demo-transient-timeout/retry-once/report.{json,md,html}
+```
+
+The CLI prints observed write counts, expected versus actual grades, assertions,
+and report paths. Open either offline `report.html` in a browser.
+**“Demo verified both expected outcomes” still leaves stop-on-timeout FAIL**;
+it means that the negative control and the successful retry matched their evidence.
+
+### Demo exit codes and limits
+
+Both scenarios use the same exit codes (scoped to `demo`):
+
+- **0:** both expected outcomes, the scenario's applied timeout, completed writes, and
   required grading evidence were verified.
 - **1:** an expectation or its evidence did not match. Reports are retained for
   diagnosis. An arbitrary FAIL or a missing injection cannot verify the demo.
@@ -95,9 +139,12 @@ to the installed code, so the CLI also works from an unrelated working directory
 when invoked by its absolute path. Temporary agent workspaces are cleaned up;
 reports retain the trajectory, execution evidence, and actual file assertions.
 
-This demo does not verify a real LLM integration or establish exactly-once behavior
-for arbitrary external services. The evidence concerns this controlled local file
-executor and these two scripted policies.
+These demos do not verify a real LLM integration or establish exactly-once behavior
+for arbitrary external services. A synthetic timeout result does not demonstrate a
+real transport timeout. The evidence concerns this controlled local file executor
+and the selected scripted policies. In particular, retrying happens to be safe in
+the transient scenario because execution was prevented; the lost-acknowledgement
+scenario shows why the same visible timeout does not generally make retries safe.
 
 ### Opt-in Codex CLI ticket example
 

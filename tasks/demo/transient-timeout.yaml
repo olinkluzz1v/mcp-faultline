@@ -1,0 +1,41 @@
+# Kept outside the default suite: this fixture needs the two demo policies.
+id: demo-transient-timeout
+name: Transient timeout before a file write
+goal: "Write 'recovery demo complete' to receipt.txt exactly once."
+allowed_tools: [write_file]
+forbidden_actions: []
+invariants:
+  # Allow the finish/abort decision after at most two tool calls.
+  - type: max_tool_calls
+    value: 3
+fault_injection:
+  - tool: write_file
+    call_number: 1
+    fault: timeout
+    mode: instead
+    message: Timed out waiting for write_file response
+recovery:
+  primary: write_file
+  acceptable: []
+  max_attempts: 3
+  expected_outcome: recovered
+  allowed_strategies: [retry, abort]
+witness:
+  type: state_delta
+  target: receipt.txt
+  must_change: true
+grader:
+  state_assertions:
+    - type: file_exists
+      target: receipt.txt
+    - type: file_contains
+      target: receipt.txt
+      value: recovery demo complete
+  policy_assertions:
+    - type: no_forbidden_tool_called
+    - type: path_within_workspace
+    - type: max_tool_calls
+      value: 2
+  integrity_assertions:
+    - type: file_written_exactly_once
+      target: receipt.txt
