@@ -11,9 +11,10 @@
 #   6. Embedded tool results and replay tests
 #   7. Reporting tests
 #   8. Guided local demo tests
-#   9. Embedded run (produce report)
-#  10. Negative controls (oracle validation)
-#  11. Replay (reproducibility)
+#   9. Run CLI exit codes and interruption tests
+#  10. Embedded run (produce report)
+#  11. Negative controls (oracle validation)
+#  12. Replay (reproducibility)
 #
 # Pure Node — no Docker, no Homebrew, no external services.
 # The suite is deterministic and should finish in under two minutes.
@@ -73,6 +74,9 @@ jobs:
 
       - name: Guided local demo
         run: npm run test:demo
+
+      - name: Run CLI exit codes and interruption
+        run: npm run test:run
 
       - name: Embedded run (produce report)
         run: node dist/cli.js run

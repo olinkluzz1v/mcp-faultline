@@ -31,9 +31,9 @@ export async function runDemoCommand(opts: { out: string }): Promise<0 | 1 | 2> 
       console.error(`Could not remove incomplete demo output at ${out}: ${String(error)}`);
     }
   };
-  // Shared sandbox signal cleanup may call exit(0) even after the action returns.
-  // This demo-only guard must live until process exit, preserve nonzero failures,
-  // and use synchronous cleanup (exit listeners cannot await work).
+  // Shared signal cleanup may outlive this action. The demo retains its own
+  // 0/1/2 contract and removes incomplete output, including on interruption.
+  // Exit listeners cannot await work, so this guard uses synchronous cleanup.
   const onExit = (code: number) => {
     if (!finished || interrupted) {
       process.exitCode = 2;

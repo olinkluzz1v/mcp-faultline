@@ -22,6 +22,13 @@ URL. It contains its own CSS, uses system fonts and native `<details>` controls,
 and loads no scripts, images, remote styles or data. Its GitHub links are optional
 navigation, not dependencies. All variable HTML text is escaped.
 
+`run` now exits `1` when any recorded grade fails, after finishing the batch and
+writing its diagnostic reports. It exits `0` only for a nonempty passing batch
+whose requested reports were all written. Configuration, harness, sandbox, and
+write failures return `2`; failure cleanup does not delete existing reports.
+See the [CI exit and interruption contract](../README.md#use-run-as-a-ci-check).
+Report schemas, statistics, and grading are unchanged.
+
 The report presents overall results, results by fault type, task-level results,
 sample limitations and expandable run details. Percentages always appear with
 their sample counts. Narrow screens can scroll each table horizontally; all
