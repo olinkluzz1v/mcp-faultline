@@ -241,6 +241,12 @@ More detail in [ARCHITECTURE.md](./ARCHITECTURE.md).
 | `replay` | Re-run an agent against a recorded trajectory |
 | `report` | Convert saved BatchReport JSON to offline HTML without re-execution |
 
+The stdio proxy preserves upstream MCP tool errors and applies `after` faults
+only to observed successful responses. Its SDK integration tests independently
+verify fixture writes, response forwarding, concurrent call identities, and
+disconnect uncertainty. See [proxy protocol and evidence](docs/proxy.md) for the
+tested behavior, API compatibility notes, and remaining limits.
+
 ---
 
 ## Five-layer grading
@@ -300,10 +306,10 @@ Honest list. These are the things that are not done yet.
 
 - **Mode A only.** We grade what the agent attempted, not what the consequences were. Mode B is future work.
 - **File-based side effects only.** Network calls, emails, git commits are not tracked.
-- **One external agent tested.** Cline. Claude Code, Cursor, etc. are untested.
+- **Protocol integration, not real-agent validation.** The fork tests an SDK client through the stdio proxy to a local fixture. This does not establish a versioned real-agent/model workflow or live-model compatibility.
 - **No LLM judge.** Everything is deterministic. No model in the grading loop.
 - **Fault statistics are observational.** Mixed-fault runs contribute to multiple groups; the report does not identify which fault caused a failure. Older runs without injection metadata are marked as unknown.
-- **Execution is not proof of a side effect.** Embedded records distinguish an invoked executor (`executed`) from successful completion (`executionSucceeded`). Failed I/O may leave partial effects; replay cannot reconstruct those. Proxy transport errors still cannot establish whether a remote tool ran.
+- **Execution is not proof of a side effect.** Embedded records distinguish an invoked executor (`executed`) from successful completion (`executionSucceeded`). Failed I/O may leave partial effects; replay cannot reconstruct those. Proxy records distinguish forwarding from observed responses; remote execution remains unknown without independent state. A synthetic timeout response does not prove a real transport timeout. See [proxy evidence](docs/proxy.md#remote-observations).
 - **Replay is single-run.** No batch replay, no agent-vs-agent comparison yet.
 - **Older duplicate records remain ambiguous.** Replay does not repair trajectories recorded by the former `after` duplication bug. Re-run the task for a fresh trajectory; saved-report conversion keeps historical evidence and grades unchanged.
 
@@ -316,6 +322,7 @@ npm run build           # tsc
 npm run dev             # tsc --watch
 
 npm run test:proxy-smoke        # proxy intercepts and injects faults
+npm run test:proxy              # MCP SDK stdio integration and independent write evidence
 npm run test:integrity-smoke    # integrity layer catches double-writes
 npm run test:idempotency-smoke  # mode: after produces a real double-write
 npm run test:agent              # structured tool results, execution evidence and replay

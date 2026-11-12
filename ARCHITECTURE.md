@@ -113,6 +113,13 @@ The stdio proxy sits between an external MCP client (Cline, Claude Code, ...) an
 
 `bridge.ts` wires the two sides together and consults `fault-runtime.ts` before every `tools/call`. The runtime returns a decision, and the bridge either short-circuits (`instead`) or forwards and replaces (`after`).
 
+`after` requires an observed successful MCP tool response. Upstream `isError`
+responses pass through unchanged and do not count as injections. The bridge
+keeps invocation identity independent of completion order. `response.ts` adapts
+synthetic registry payloads to SDK response shapes without exposing private
+injection bookkeeping. See [proxy protocol and evidence](docs/proxy.md) for
+remote execution uncertainty and the additive `executed: "unknown"` contract.
+
 ### `src/replay/replay.ts`
 
 Replays a recorded trajectory. For each tool call the agent makes during replay, the tool wrapper looks up the corresponding source call in the recorded trajectory.
@@ -141,7 +148,10 @@ Data-shape faults (`stale`, `empty`, `wrong_value`) return a success status with
 { "status": "success", "data": { "_fault": { "kind": "stale" }, "data": {...} } }
 ```
 
-The agent cannot tell from the wire format. Only the grader reads the marker. This is what makes the "silent wrong data" class of faults testable.
+This is the registry's internal representation. The stdio proxy exposes the
+inner application payload as MCP content and structured content, keeping this
+private marker in its records. This does not imply that a synthetic payload is
+indistinguishable from real application data.
 
 ### Tool results and execution evidence
 
@@ -157,7 +167,8 @@ does not. Failed I/O can have partial effects that these flags cannot quantify.
 Integrity counting and replay use completed execution evidence. For legacy
 records without the new field, they retain the historical `executed` fallback.
 Replay preserves source execution evidence even for reads served from recorded
-data. The proxy format and its remote execution uncertainty are unchanged.
+data. Proxy records have a separate [remote observation contract](docs/proxy.md#remote-observations)
+and must not be treated as embedded execution/side-effect evidence.
 
 `AgentTool.execute()` still returns raw data or throws. Wrappers return the
 data for every `success` result, including synthetic successes. Failures use

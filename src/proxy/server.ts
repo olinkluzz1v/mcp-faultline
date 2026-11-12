@@ -20,7 +20,9 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
   type CallToolRequest,
+  type CallToolResult,
   type ListToolsRequest,
+  type ListToolsResult,
 } from '@modelcontextprotocol/sdk/types.js';
 
 import type { ProxyEvent } from './types.js';
@@ -36,14 +38,14 @@ export interface ProxyServerOptions {
    * Must return the raw MCP result to send back. Errors thrown here
    * are converted into MCP error responses, not crashes.
    */
-  readonly onCallTool: (request: CallToolRequest) => Promise<unknown>;
+  readonly onCallTool: (request: CallToolRequest) => Promise<CallToolResult>;
 
   /**
    * Handler invoked for every `tools/list` request from the agent.
    * Returning the real server's tool list (possibly filtered) keeps
    * the agent's view consistent with what it can actually call.
    */
-  readonly onListTools: (request: ListToolsRequest) => Promise<unknown>;
+  readonly onListTools: (request: ListToolsRequest) => Promise<ListToolsResult>;
 }
 
 export interface ProxyServerHandle {
@@ -94,7 +96,7 @@ export async function createProxyServer(
         message: 'tools/list response',
         data: { method: 'tools/list' },
       });
-      return result as never;
+      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       emit(onEvent, {
@@ -107,30 +109,9 @@ export async function createProxyServer(
   });
 
   // --- tools/call -----------------------------------------------------
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    emit(onEvent, {
-      type: 'request_forwarded',
-      actor: 'agent',
-      message: `tools/call ${request.params.name}`,
-      data: {
-        method: 'tools/call',
-        toolName: request.params.name,
-      },
-    });
-    try {
-      const result = await onCallTool(request);
-      return result as never;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      emit(onEvent, {
-        type: 'proxy_error',
-        actor: 'proxy',
-        message: `tools/call ${request.params.name} failed: ${message}`,
-        data: { toolName: request.params.name },
-      });
-      throw err;
-    }
-  });
+  // The bridge owns tool invocation identities and emits forwarding evidence
+  // only when it actually calls upstream (an instead injection never does).
+  server.setRequestHandler(CallToolRequestSchema, onCallTool);
 
   // --- transport ------------------------------------------------------
   const transport = new StdioServerTransport();
