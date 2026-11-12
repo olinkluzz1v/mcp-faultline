@@ -70,18 +70,10 @@ export class TempFolderSandbox implements Sandbox {
       return;
     }
 
-    try {
-      await rm(this.workspacePath, { recursive: true, force: true });
-    } catch (error) {
-      // Log but do not throw — cleanup failures should not break the run
-      console.error(
-        `[TempFolderSandbox] Cleanup failed for "${this.workspacePath}": ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    } finally {
-      this.setupDone = false;
-    }
+    // A cleanup failure is a sandbox failure. Keep setupDone true so registered
+    // cleanup can retry, and let the caller report a failing operation.
+    await rm(this.workspacePath, { recursive: true, force: true });
+    this.setupDone = false;
   }
 
   /**

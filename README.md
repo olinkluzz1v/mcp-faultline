@@ -116,6 +116,45 @@ The `run` command writes `reports/report.json`, `reports/report.md`, and `report
 
 All three formats include results by injected fault type. A run counts once per type even if that fault is injected repeatedly; injection counts are shown separately. Runs with several types appear in several groups. [Read the counting rules and limitations](docs/reporting.md#counting-rules) before comparing percentages.
 
+### Use `run` as a CI check
+
+```bash
+npm ci
+npm run build
+node dist/cli.js run --tasks tasks --runs 1 --out reports/ci
+```
+
+Let the CI shell use the command's exit status; upload the report directory even
+when the check fails. `run` uses these exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | At least one evaluation completed, every `grade.passed` is true, and all requested reports were written. |
+| `1` | At least one grade failed. The normal batch finishes, including all repetitions, and its actual grades are saved in the reports. |
+| `2` | Invalid arguments, empty/missing task directory, invalid task file, or an unexpected harness, sandbox, or report-writing failure. This takes precedence over failed grades. |
+
+**Changed behavior:** failed grades previously printed a summary and exited `0`;
+they now fail the CI step with `1`. Grading rules and recorded grades are unchanged.
+Injected tool failures and legitimate safe aborts are evaluated by the grader;
+they do not automatically imply an infrastructure error. An unexpected agent
+exception or sandbox cleanup failure is an infrastructure error.
+
+`--runs` requires whole-number decimal digits representing a positive safe integer
+from `1` through `9007199254740991`. Zero, negative, fractional, nonnumeric,
+infinite, and unsafe values are rejected before loading tasks or writing output.
+`run --help` exits `0` without evaluating tasks or creating reports.
+
+SIGINT/SIGTERM normally exit `130`/`143` after registered sandbox cleanup. A failed
+grade already detected remains `1`; an infrastructure/output error remains `2`,
+including one detected while signal cleanup is pending. No interrupted operation
+is reported as success. Interrupted/error output can be incomplete; failure cleanup
+does not delete existing reports. Normal runs retain their existing overwrite
+behavior, so use a separate `--out` directory to preserve an earlier batch.
+The [demo](#guided-local-demo-a-lost-acknowledgement) keeps its separate `0/1/2`
+contract, where a correctly failing negative control is an expected outcome.
+
+### Convert a saved report
+
 Convert a saved batch to offline HTML without running agents or tasks again:
 
 ```bash
@@ -282,7 +321,8 @@ npm run test:idempotency-smoke  # mode: after produces a real double-write
 npm run test:agent              # structured tool results, execution evidence and replay
 npm run test:report             # fault statistics, provenance, output and CLI
 npm run test:demo               # local recovery demo, evidence and CLI exit behavior
-npm test                        # smoke, agent, reporting and demo checks (build first)
+npm run test:run                # batch exit codes, validation and interruption
+npm test                        # smoke, agent, reporting, demo and run checks (build first)
 ```
 
 Full suite (build, run, oracle, replay):

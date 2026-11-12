@@ -23,8 +23,7 @@ file-based.
 
 ## Shipped foundation
 
-As of [main at 4b819c3](https://github.com/olinkluzz1v/mcp-faultline/commit/4b819c3031e7bb7bb5b2531a4389e20a951fa919),
-the project already provides:
+The current fork provides:
 
 - YAML task and fault specifications, a scripted embedded agent, local filesystem
   assertions, recovery/integrity checks, and negative controls without API keys.
@@ -33,15 +32,21 @@ the project already provides:
   [tool-result contract](../ARCHITECTURE.md#tool-results-and-execution-evidence).
 - JSON, Markdown, and standalone offline HTML reports, plus conversion of a saved
   batch to HTML without re-execution. See [reporting](reporting.md).
+- A guided [no-key local demo](../README.md#guided-local-demo-a-lost-acknowledgement)
+  of a lost write acknowledgement. Two scripted filesystem policies retain their
+  actual FAIL/PASS grades; the demo verifies both expected outcomes and their evidence.
+- A [CI exit contract for `run`](../README.md#use-run-as-a-ci-check): success requires
+  a nonempty passing batch and successful report writes; failed grades return `1`,
+  configuration/infrastructure errors return `2`, and interruptions remain nonzero.
 - Single-run replay using recorded responses and completed writes in a fresh
   sandbox, within the documented partial-effect and legacy-record limits.
 - A stdio proxy for external MCP clients. A versioned, reproducible real-agent
   and model workflow still needs the end-to-end evidence specified below.
 
-These pieces support the intended workflow; the integrated product experience
-below is still a release goal. In particular, the current `run` command prints
-failed grades but does not set a failure exit code for them. File-based checks
-do not establish the outcomes of arbitrary external services.
+These pieces support the intended workflow; the real-agent integration and fresh
+external-agent regression experience below are still release goals. The local
+demo and embedded CI check do not validate a real LLM integration, and file-based
+checks do not establish the outcomes of arbitrary external services.
 
 ## Reference projects
 
@@ -67,19 +72,15 @@ specific workflow is enough; matching every competitor feature is not a goal.
 
 ## Remaining goals for the first focused release
 
-1. Package the existing scripted evaluation into a guided no-key local demo with
-   known successful recovery and a known failure that the grader catches. Make
-   the scripted nature of this demo explicit.
-2. One documented integration tested end to end with a real agent and model,
+1. One documented integration tested end to end with a real agent and model,
    with exact versions, configuration, and evidence. A proxy connection or
    scripted fixture alone does not establish that integration.
-3. Package three small scenarios: transient timeout, lost acknowledgement after a
-   successful write, and incomplete data. Each specifies acceptable outcomes,
-   verifies independent state where applicable, and has a known bad control.
-4. Reuse the existing offline HTML and machine-readable reports to explain each
-   outcome. Define and test CLI/CI exit behavior that distinguishes passing
-   expectations, failed expectations, and execution errors.
-5. Provide a documented path from a retained scenario to a fresh run against a
+2. Extend the shipped lost-acknowledgement demo with equally guided transient-timeout
+   and incomplete-data scenarios. Each specifies acceptable outcomes, verifies
+   independent state where applicable, and has a known bad control.
+3. Carry the existing reports and tested CLI/CI exit behavior into the supported
+   external-agent workflow, with fresh evidence for that integration.
+4. Provide a documented path from a retained scenario to a fresh run against a
    changed external agent in isolated test state. Existing YAML scenarios can
    already be versioned. Reading a saved report or replaying old responses is
    not evidence that a new agent version has fixed the problem.

@@ -19,6 +19,12 @@ import type { Sandbox } from './interface.js';
 export class CleanupRegistry {
   private sandboxes: Set<Sandbox> = new Set();
   private installed = false;
+  private shutdownCode?: number;
+
+  /** Nonzero status captured when signal-driven cleanup begins. */
+  get interruptionExitCode(): number | undefined {
+    return this.shutdownCode;
+  }
 
   /**
    * Register a sandbox for cleanup on process exit.
@@ -64,9 +70,20 @@ export class CleanupRegistry {
     this.installed = true;
 
     const handler = async (signal: string): Promise<void> => {
+      if (this.shutdownCode !== undefined) return;
+      this.shutdownCode = Number(process.exitCode) || (signal === 'SIGINT' ? 130 : 143);
+      process.exitCode = this.shutdownCode;
+      // A caller may finish and explicitly exit(0) before async cleanup settles.
+      // Enforce the nonzero status centrally, while respecting a command such as
+      // demo that maps interruption to its own nonzero code in an exit listener.
+      process.once('exit', () => {
+        if (!Number(process.exitCode)) process.exitCode = this.shutdownCode;
+      });
       console.error(`\n[CleanupRegistry] Received ${signal}, cleaning up...`);
       await this.cleanupAll();
-      process.exit(0);
+      // Cleanup can overlap command completion or a newly detected failure.
+      // Preserve a nonzero status; a late successful return cannot erase the signal.
+      process.exit(Number(process.exitCode) || this.shutdownCode);
     };
 
     process.on('SIGINT', () => void handler('SIGINT'));

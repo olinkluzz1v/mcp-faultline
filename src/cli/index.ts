@@ -1,14 +1,16 @@
 // src/cli/index.ts
 
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import { readdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { runTasks } from './runner.js';
+import { runTask } from './runner.js';
+import { loadTasks } from '../task/loader.js';
+import { globalCleanupRegistry } from '../sandbox/cleanup.js';
 import { computeStats } from '../report/stats.js';
 import { writeJson } from '../report/json.js';
 import { writeMarkdown } from '../report/markdown.js';
 import { writeHtml } from '../report/html.js';
-import type { BatchReport } from '../report/types.js';
+import type { BatchReport, RunResult } from '../report/types.js';
 import type {
   AgentStepState,
   AgentStepResult,
@@ -44,15 +46,23 @@ export function createCli(): Command {
     .command('run')
     .description('Run a task suite and produce a report')
     .option('-t, --tasks <dir>', 'Directory containing task YAML files', 'tasks')
-    .option('-r, --runs <n>', 'Runs per task', '1')
+    .option('-r, --runs <n>', 'Positive decimal safe integer runs per task', value => {
+      const count = Number(value);
+      if (!/^\d+$/.test(value) || !Number.isSafeInteger(count) || count < 1) {
+        throw new InvalidArgumentError('must be a positive decimal safe integer (1–9007199254740991)');
+      }
+      return count;
+    }, 1)
     .option('-o, --out <dir>', 'Output directory', 'reports')
     .option('--json', 'Write JSON report', true)
     .option('--md', 'Write Markdown report', true)
     .option('--no-html', 'Skip the standalone HTML report')
+    .allowExcessArguments(false)
+    .exitOverride(error => process.exit(error.exitCode === 0 ? 0 : 2))
     .action(async (opts) => {
-      await runCommand({
+      process.exitCode = await runCommand({
         tasksDir: opts.tasks,
-        runsPerTask: Number(opts.runs),
+        runsPerTask: opts.runs,
         outDir: opts.out,
         writeJsonReport: opts.json,
         writeMarkdownReport: opts.md,
@@ -340,71 +350,92 @@ export function defaultStep(state: AgentStepState): Promise<AgentStepResult> {
   });
 }
 
-async function runCommand(opts: RunCommandOptions): Promise<void> {
-  const startTime = Date.now();
-  const tasksDir = resolve(opts.tasksDir);
+async function runCommand(opts: RunCommandOptions): Promise<number> {
+  let phase = 'configuration';
+  try {
+    const startTime = Date.now();
+    const tasksDir = resolve(opts.tasksDir);
+    const files = (await readdir(tasksDir))
+      .filter((f) => f.endsWith('.yaml'))
+      .sort()
+      .map((f) => join(tasksDir, f));
 
-  const files = (await readdir(tasksDir))
-    .filter((f) => f.endsWith('.yaml'))
-    .map((f) => join(tasksDir, f));
+    if (files.length === 0) throw new Error(`No task YAML files found in ${tasksDir}`);
+    // Validate the whole suite before starting any evaluation.
+    const tasks = await loadTasks(files);
+    console.error(`Running ${tasks.length} task(s) × ${opts.runsPerTask} run(s)...`);
 
-  if (files.length === 0) {
-    console.error(`No task YAML files found in ${tasksDir}`);
-    process.exit(1);
+    phase = 'harness';
+    const allResults: RunResult[] = [];
+    for (let i = 0; i < opts.runsPerTask; i++) {
+      for (const task of tasks) {
+        if (globalCleanupRegistry.interruptionExitCode !== undefined) return globalCleanupRegistry.interruptionExitCode;
+        const result = await runTask(task, defaultStep);
+        if (result.trajectory.status === 'failed') {
+          throw new Error(`Task ${task.id}: ${result.trajectory.error ?? 'Unexpected agent failure'}`);
+        }
+        if (globalCleanupRegistry.interruptionExitCode !== undefined) return globalCleanupRegistry.interruptionExitCode;
+        allResults.push(result);
+        // Establish a grade failure immediately, but finish the normal batch.
+        // Injected errors and safe aborts are graded outcomes, not harness errors.
+        if (!result.grade.passed) process.exitCode = 1;
+      }
+    }
+    if (allResults.length === 0) throw new Error('No evaluations completed');
+
+    const stats = computeStats(allResults);
+    const report: BatchReport = {
+      meta: {
+        generatedAt: Date.now(),
+        durationMs: Date.now() - startTime,
+        taskCount: tasks.length,
+        runsPerTask: opts.runsPerTask,
+      },
+      stats,
+      runs: allResults,
+    };
+
+    phase = 'report writing';
+    const outDir = resolve(opts.outDir);
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(outDir, { recursive: true });
+    if (globalCleanupRegistry.interruptionExitCode !== undefined) return globalCleanupRegistry.interruptionExitCode;
+
+    if (opts.writeJsonReport) {
+      const jsonPath = join(outDir, 'report.json');
+      await writeJson(report, jsonPath);
+      console.error(`JSON report: ${jsonPath}`);
+    }
+    if (globalCleanupRegistry.interruptionExitCode !== undefined) return globalCleanupRegistry.interruptionExitCode;
+    if (opts.writeMarkdownReport) {
+      const mdPath = join(outDir, 'report.md');
+      await writeMarkdown(report, mdPath);
+      console.error(`Markdown report: ${mdPath}`);
+    }
+    if (globalCleanupRegistry.interruptionExitCode !== undefined) return globalCleanupRegistry.interruptionExitCode;
+    if (opts.writeHtmlReport) {
+      const htmlPath = join(outDir, 'report.html');
+      await writeHtml(report, htmlPath);
+      console.error(`HTML report: ${htmlPath}`);
+    }
+    if (globalCleanupRegistry.interruptionExitCode !== undefined) return globalCleanupRegistry.interruptionExitCode;
+
+    console.error('');
+    console.error('Summary:');
+    console.error(`  Total:     ${stats.total}`);
+    console.error(`  Passed:    ${stats.passed}`);
+    console.error(`  Failed:    ${stats.failed}`);
+    console.error(`  Pass rate: ${(stats.passRate * 100).toFixed(1)}%`);
+    console.error(
+      `  95% CI:    [${(stats.confidenceInterval[0] * 100).toFixed(1)}%, ${(stats.confidenceInterval[1] * 100).toFixed(1)}%]`
+    );
+    return allResults.some(result => !result.grade.passed) ? 1 : 0;
+  } catch (error) {
+    // Set this before awaiting cleanup: output/infrastructure errors outrank grades
+    // and must survive a concurrent signal handler finishing its cleanup.
+    process.exitCode = 2;
+    console.error(`Run ${phase} error: ${error instanceof Error ? error.message : String(error)}`);
+    await globalCleanupRegistry.cleanupAll().catch(error => console.error(`Sandbox cleanup error: ${String(error)}`));
+    return 2;
   }
-
-  console.error(`Running ${files.length} task(s) × ${opts.runsPerTask} run(s)...`);
-
-  // Repeat runs
-  const allResults = [];
-  for (let i = 0; i < opts.runsPerTask; i++) {
-    const results = await runTasks(files, defaultStep);
-    allResults.push(...results);
-  }
-
-  const stats = computeStats(allResults);
-
-  const report: BatchReport = {
-    meta: {
-      generatedAt: Date.now(),
-      durationMs: Date.now() - startTime,
-      taskCount: files.length,
-      runsPerTask: opts.runsPerTask,
-    },
-    stats,
-    runs: allResults,
-  };
-
-  const outDir = resolve(opts.outDir);
-  const { mkdir } = await import('node:fs/promises');
-  await mkdir(outDir, { recursive: true });
-
-  if (opts.writeJsonReport) {
-    const jsonPath = join(outDir, 'report.json');
-    await writeJson(report, jsonPath);
-    console.error(`JSON report: ${jsonPath}`);
-  }
-
-  if (opts.writeMarkdownReport) {
-    const mdPath = join(outDir, 'report.md');
-    await writeMarkdown(report, mdPath);
-    console.error(`Markdown report: ${mdPath}`);
-  }
-
-  if (opts.writeHtmlReport) {
-    const htmlPath = join(outDir, 'report.html');
-    await writeHtml(report, htmlPath);
-    console.error(`HTML report: ${htmlPath}`);
-  }
-
-  // Print summary to stderr
-  console.error('');
-  console.error('Summary:');
-  console.error(`  Total:     ${stats.total}`);
-  console.error(`  Passed:    ${stats.passed}`);
-  console.error(`  Failed:    ${stats.failed}`);
-  console.error(`  Pass rate: ${(stats.passRate * 100).toFixed(1)}%`);
-  console.error(
-    `  95% CI:    [${(stats.confidenceInterval[0] * 100).toFixed(1)}%, ${(stats.confidenceInterval[1] * 100).toFixed(1)}%]`
-  );
 }
