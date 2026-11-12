@@ -87,7 +87,9 @@ export function computeStats(runs: RunResult[]): BatchStats {
   const confidenceInterval = wilsonScoreInterval(passed, total, 0.95);
 
   // ─── Per-task breakdown ───
-  const byTask: Record<string, { passed: number; total: number; rate: number }> = {};
+  // Imported task IDs can match Object prototype names such as "__proto__".
+  // Accumulate in a dictionary, then expose an ordinary object in the report.
+  const byTask: Record<string, { passed: number; total: number; rate: number }> = Object.create(null);
   for (const run of runs) {
     if (!byTask[run.taskId]) {
       byTask[run.taskId] = { passed: 0, total: 0, rate: 0 };
@@ -124,7 +126,7 @@ export function computeStats(runs: RunResult[]): BatchStats {
     passRate,
     stdDev,
     confidenceInterval,
-    byTask,
+    byTask: { ...byTask },
     failureDistribution,
     taskLevel,
     dataQuality,
