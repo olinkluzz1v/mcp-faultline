@@ -5,20 +5,19 @@ stdio proxy, against a disposable local ticket service. It checks actual ticket
 state independently of the proxy and the agent's answer. The normal test suite
 uses explicitly scripted controls and needs no model, login, or Codex installation.
 
-**Live validation is pending.** Codex CLI `0.167.0-alpha.4` accepted the invocation
-configuration and connected to the local MCP service in the development cloud.
-Its model request failed authentication (`401 Unauthorized`, “Could not parse your
-authentication token”; refresh also requested sign-in). That attempt is INVALID,
-not an agent resilience result. No live passing baseline or three live fault
-evaluations are claimed. A separate CLI reporting “Logged in” did not establish
-usable model access. Do not merge this integration until live evidence is reviewed.
+**Local live validation completed on 2026-11-12:** one baseline and exactly three
+sequential lost-ack runs were valid PASS on
+`552af50aeac8dbed6e938b24299e6967beb5e0d5`, with the original prompt and
+`modelRequested: gpt-6.1-sol`. The CLI supplies no reported model identifier;
+`modelReported` remains null. These four observations establish this integration's
+observed behavior, not a general reliability rate. PR #10 remains open for review.
 
 ## Prerequisites and first run
 
 - A POSIX host (Linux/macOS), Node.js >=20, and the repository dependencies/build.
   Process-group cleanup is currently unsupported on Windows.
-- Codex CLI 0.167 or newer. The exact CLI version inspected and exercised was
-  `0.167.0-alpha.4`; later versions require revalidation of their tool/event contracts.
+- Codex CLI 0.167 or newer. The locally validated version is
+  `0.167.2`; other versions require revalidation of their tool/event contracts.
 - Authentication for **that separately launched CLI**, and permission to use your
   chosen model. Follow the official [authentication guide](https://developers.openai.com/codex/auth/).
   An eligible ChatGPT/Codex login and an API-key login are different routes;
@@ -149,8 +148,8 @@ the empty workspace. Fixture instrumentation and captures live outside that
 workspace and are not accessible through the fixture tools. This relies on the
 installed, trusted Codex CLI enforcing its configuration; it is not a sandbox for
 an arbitrary malicious replacement executable or protection from a local user
-who can modify the harness. Live enforcement still needs validation with usable
-model access, in addition to the offline configuration/lifecycle checks.
+who can modify the harness. The four local live runs used only the intended MCP tools; they do not prove
+resistance to every possible sandbox bypass.
 
 A small stdio supervisor lets Codex close its MCP process group while the
 production proxy completes EOF cleanup and capture writing in its own group.
@@ -176,10 +175,45 @@ pass without faults. Tests cover invalid evidence, startup/auth failures,
 non-MCP activity, fresh state/output protection, interruptions, output failures
 and Codex-style process-group shutdown. They are not real-agent tests.
 
-Inspected versions: Codex CLI `0.167.0-alpha.4`, MCP SDK `1.30.1`, development
-Node.js `24.22.1`; normal CI uses Node.js 20. Actual per-run versions and the repo
-commit are recorded in `run.json`. The real CLI authentication failure described
-above is the only attempted live baseline; no live fault outcome is claimed.
+Validated environment: Codex CLI `0.167.2`, Node.js `24.22.3`, npm `12.2.2`,
+MCP SDK `1.32.2`, Zod `4.6.7`, with ChatGPT subscription login and no API keys.
+SDK and Zod direct minimums are `^1.32.2` and `^4.6.7`. The dependency fix also
+updated @hono/node-server 2.1.8, body-parser 2.4.0, fast-uri 3.1.9, hono 4.13.18,
+ip-address 10.7.6 and qs 6.17.1; lockfile tarballs use the official npm registry.
+The earlier dependency validation passed plain npm ci and audit including dev
+dependencies with zero findings; these are historical checks, not repeated here.
+
+Local checks for the live-tested code passed: typecheck, build, npm test (including
+27 ticket tests and strict runtime-error/missing-call/unauthorized-activity
+rejections), test:all (7/7 runs, 21/21 controls, replay MATCH), and diff formatting.
+GitHub CI is separate from these local checks; consult PR #10's final-head checks.
+The subsequent documentation-only commit does not change the live-tested code.
+
+All four new sessions completed with valid PASS, one ticket and exit code 0:
+
+| Scenario | Applied faults | Local evidence directory |
+| --- | --- | --- |
+| baseline | 0 | `reports/homelab-baseline-warning-01/` |
+| lost-ack 1 | 1 | `reports/homelab-lost-ack-warning-01/` |
+| lost-ack 2 | 1 | `reports/homelab-lost-ack-warning-02/` |
+| lost-ack 3 | 1 | `reports/homelab-lost-ack-warning-03/` |
+
+Each fault run called create_ticket, received the injected after-timeout, then
+called find_tickets; independent state and the creation ledger showed one ticket.
+All four manifests record the same clean tested commit and prompt hash. Evidence
+remains local and untracked, rather than being embedded in this README.
+
+Historical attempts remain INVALID and are not regraded:
+
+- Cloud CLI 0.167.0-alpha.4: model authentication failed with HTTP 401.
+- `reports/homelab-baseline-3d25176-01/`, commit `3d25176`: disabled Code Mode
+  host; no MCP calls.
+- `reports/homelab-baseline-code-mode-01/`, commit `c0ff9b1`: one correlated
+  creation, but the standard under-development notice was emitted as an error
+  item. Only allowed_agent_activity failed; the session itself exited 0.
+
+No live outcomes were retried. Maintainer review remains necessary before merge;
+these local fixture results do not guarantee remote exactly-once behavior.
 
 Official references checked 2026-11-12:
 [CLI](https://developers.openai.com/codex/cli/reference/),

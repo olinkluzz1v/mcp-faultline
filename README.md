@@ -115,10 +115,11 @@ fresh output directory. `--scenario baseline` runs the same task without a fault
 Exit codes are `0` for a valid PASS, `1` for a valid FAIL, and `2` for invalid or
 incomplete evidence, infrastructure errors or interruptions.
 
-**Live model validation is pending:** the inspected Codex CLI could connect to MCP
-but its model authentication failed. Normal CI covers scripted controls only and
-requires no model credentials. See the [example guide](examples/codex-ticket/README.md)
-for prerequisites, isolation, exact versions, outputs and fresh prompt/model reruns.
+**Local live validation:** one baseline and three lost-ack runs with Codex CLI
+0.167.2 and requested model gpt-6.1-sol were valid PASS on commit `552af50`.
+Historical INVALID attempts and the limits of these four observations are retained
+in the [example guide](examples/codex-ticket/README.md). Normal CI uses scripted
+controls and needs no model credentials.
 
 ### Run the suite and convert reports
 
@@ -335,7 +336,7 @@ Honest list. These are the things that are not done yet.
 
 - **Mode A only.** We grade what the agent attempted, not what the consequences were. Mode B is future work.
 - **File-based side effects only.** Network calls, emails, git commits are not tracked.
-- **Live model validation is pending.** The [Codex ticket example](examples/codex-ticket/README.md) provides an opt-in external-agent workflow and independent local state checks. Its deterministic CI controls are scripted; the actual model attempt was blocked by authentication. No live-model compatibility or general resilience claim is established.
+- **Live validation is scoped.** One local baseline and three fault runs passed for the [Codex ticket example](examples/codex-ticket/README.md). They do not establish general model resilience, compatibility with other versions/models, or remote exactly-once guarantees. CI uses scripted controls.
 - **No LLM judge.** Everything is deterministic. No model in the grading loop.
 - **Fault statistics are observational.** Mixed-fault runs contribute to multiple groups; the report does not identify which fault caused a failure. Older runs without injection metadata are marked as unknown.
 - **Execution is not proof of a side effect.** Embedded records distinguish an invoked executor (`executed`) from successful completion (`executionSucceeded`). Failed I/O may leave partial effects; replay cannot reconstruct those. Proxy records distinguish forwarding from observed responses; remote execution remains unknown without independent state. A synthetic timeout response does not prove a real transport timeout. See [proxy evidence](docs/proxy.md#remote-observations).
