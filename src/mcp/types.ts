@@ -51,7 +51,7 @@ export interface TrajectoryEvent {
  *   - `mode: 'instead'` fault injection: the tool is NOT executed,
  *     so no side-effect occurs. `executed: false`.
  *   - `mode: 'after'` fault injection: the tool IS executed, but
- *     the agent sees a synthetic error. `executed: true`.
+ *     the agent sees a synthetic result. `executed: true`.
  *
  * Without this flag, integrity assertions cannot tell the
  * difference between a fault that prevented a write (instead)
@@ -76,6 +76,13 @@ export interface ToolCallRecord {
    * - `false` → the tool was short-circuited (mode: instead, policy deny)
    */
   executed: boolean;
+  /**
+   * Whether the real executor completed successfully before response replacement.
+   * False for short-circuits and thrown execution errors. An executed attempt
+   * can fail with unknown partial effects; this flag is not a side-effect ledger.
+   * Absent in legacy/proxy records. Replay retains the source execution evidence.
+   */
+  executionSucceeded?: boolean;
 }
 
 /**

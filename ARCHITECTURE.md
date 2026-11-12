@@ -143,17 +143,45 @@ Data-shape faults (`stale`, `empty`, `wrong_value`) return a success status with
 
 The agent cannot tell from the wire format. Only the grader reads the marker. This is what makes the "silent wrong data" class of faults testable.
 
-### `executed: boolean` on every tool call record
+### Tool results and execution evidence
 
 Some faults run the tool first (`mode: after`). Some do not (`mode: instead`). Some policies deny the call outright. The trajectory needs to distinguish these.
 
-`executed: true` means the real tool ran. `executed: false` means it did not. This field is what makes integrity assertions work correctly.
+`executed: true` means the real executor was invoked, including attempts that
+throw. `executed: false` means policy or injection short-circuited the call.
+New embedded records also include `executionSucceeded`: whether the executor
+completed successfully **before** the response was replaced. A successful
+`write_file` execution confirms a completed write; an attempted execution alone
+does not. Failed I/O can have partial effects that these flags cannot quantify.
+
+Integrity counting and replay use completed execution evidence. For legacy
+records without the new field, they retain the historical `executed` fallback.
+Replay preserves source execution evidence even for reads served from recorded
+data. The proxy format and its remote execution uncertainty are unchanged.
+
+`AgentTool.execute()` still returns raw data or throws. Wrappers return the
+data for every `success` result, including synthetic successes. Failures use
+the exported `ToolResultError`, which carries the full typed `ToolCallResult`.
+`EmbeddedAgent` recognizes that class, preserves status and associated fields
+in the history passed to the next step, and treats other exceptions as `error`.
+Ordinary payloads containing `status` or `result` never become control signals.
+`PolicyViolationError` retains its constructor, fields, and original runner
+export; it now also carries the structured policy result.
+
+The history result has a typed status union; existing optional `data` and
+`message` access remains available. Consumers that used `status === 'error'`
+for all failures should explicitly handle `timeout`, `malformed`, and
+`policy_violation`. Each wrapper call produces exactly one `ToolCallRecord`;
+separate lifecycle events remain in the event log.
 
 ### Counter independence in the runner
 
 The tool wrapper uses two local counters: a global one for `index`, and a per-tool one for `callNumber`.
 
-This matters because the trajectory recorder's `callCount` only increments after `afterCall()`. For `mode: instead` faults, the wrapper throws before `afterCall()`. Using the recorder's counter would cause `callNumber` to stick at 1 forever. This bug existed for several phases before a test caught it.
+Call identity is allocated when the wrapper is entered, before policy,
+injection, or execution. Recording finishes before result delivery, so throwing
+a structured failure cannot add a second record. Replay uses the same per-tool
+call number and checks the arguments of that occurrence.
 
 ### Security by audit, not by block
 
@@ -209,6 +237,7 @@ Three smoke tests, reporting tests, and the oracle matrix.
 | `integrity-smoke` | Integrity layer catches a double-write |
 | `idempotency-smoke` | `mode: after` produces a real double-write |
 | `test:report` | Observed fault statistics, runner provenance, escaped output and CLI artifacts |
+| `test:agent` | Next-step history, one record per wrapper call, real file state, execution evidence and replay |
 | `negative-controls` | 21-entry matrix: good agents pass, bad agents fail |
 | `replay` | Reproduces a previous run exactly |
 
@@ -220,7 +249,11 @@ All of these run in CI on Ubuntu with Node 20.
 
 See the [Limitations](./README.md#limitations) section in the README for the user-facing list.
 
-Internally, the biggest open issue is that `EmbeddedAgent` collapses all failure statuses into a single `"error"` in its history. The trajectory has the real status, but the agent's view does not. This does not break the current test suite, but it will matter when agents need to distinguish between timeout and malformed data.
+Failed filesystem operations may leave partial side effects. Replay reproduces
+completed writes and moves, not partial effects from failed calls. Older
+recordings containing duplicate call records from the former `after` wrapper
+bug remain ambiguous; replay does not silently repair them. Saved-report
+conversion preserves their original grades and records without re-evaluation.
 
 ---
 

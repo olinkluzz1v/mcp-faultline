@@ -47,6 +47,7 @@ const runSchema = z.looseObject({
     calls: z.array(z.looseObject({
       index: count, toolName: z.string(), args: z.unknown().optional(), result,
       startedAt: timestamp, durationMs: duration, executed: z.boolean(),
+      executionSucceeded: z.boolean().optional(),
     }).transform(call => ({ ...call, args: call.args }))),
     events: z.array(z.looseObject({
       index: count, actor: z.enum(['agent', 'policy', 'executor']),
