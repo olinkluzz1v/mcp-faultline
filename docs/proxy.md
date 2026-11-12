@@ -92,3 +92,9 @@ and remove their processes and temporary directories.
 These are **MCP protocol integration tests**, not real-agent validation. They use
 no LLM or credentials, establish no live-model compatibility, and do not prove
 exactly-once behavior for arbitrary external services.
+
+Coverage is limited to the existing `tools/list` and `tools/call` stdio bridge;
+general cancellation, progress, and other MCP capabilities are not validated.
+Records establish response substitution at the bridge, not guaranteed receipt
+by an external agent. EOF alone does not currently shut down the proxy CLI: the
+SDK client's bounded close escalates to SIGTERM, whose cleanup path is tested.

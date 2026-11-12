@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolResultSchema, JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js';
 
 const fixture = name => fileURLToPath(new URL(`./fixtures/${name}.mjs`, import.meta.url));
 const fault = (tool, mode, kind = 'timeout', callNumber = 1) => ({
@@ -78,6 +78,21 @@ test('after preserves the original upstream isError response and applies no inje
   assert.deepEqual(records.faults, []);
   assert.equal(records.calls[0].upstreamOutcome, 'tool_error');
   assert.deepEqual(records.calls[0].upstreamResult, actual);
+});
+
+test('structured tool errors pass through even when they differ from the success output schema', options, async t => {
+  const s = await session(t, [fault('schema_error', 'after')]);
+  // Observe the MCP envelope directly: callTool additionally enforces the
+  // application's success schema, which a transparent proxy must not impose.
+  const actual = await s.client.request({
+    method: 'tools/call', params: { name: 'schema_error', arguments: { reason: 'operation denied' } },
+  }, CallToolResultSchema, { timeout: 3000 });
+  const { calls, faults } = await s.finish();
+  assert.deepEqual(actual, response({ reason: 'operation denied' }, true));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].upstreamOutcome, 'tool_error');
+  assert.deepEqual(calls[0].upstreamResult, actual);
+  assert.deepEqual(faults, []);
 });
 
 for (const mode of ['instead', 'after']) {

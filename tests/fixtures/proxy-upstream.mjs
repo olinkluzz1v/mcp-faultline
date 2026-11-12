@@ -8,11 +8,11 @@ import { CallToolRequestSchema, ListToolsRequestSchema, McpError, ErrorCode } fr
 const directory = process.argv[2];
 writeFileSync(join(directory, 'upstream.pid'), String(process.pid));
 const server = new Server({ name: 'proxy-integration-fixture', version: '1' }, { capabilities: { tools: {} } });
-const names = ['echo', 'tool_error', 'write_file', 'read_file', 'partial', 'protocol_error', 'invalid_result', 'disconnect'];
+const names = ['echo', 'tool_error', 'schema_error', 'write_file', 'read_file', 'partial', 'protocol_error', 'invalid_result', 'disconnect'];
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: names.map(name => ({
     name, inputSchema: { type: 'object' },
-    ...(name === 'partial' ? { outputSchema: {
+    ...(['partial', 'schema_error'].includes(name) ? { outputSchema: {
       type: 'object', properties: { _partial: { type: 'boolean' } }, required: ['_partial'],
     } } : {}),
   })),
@@ -43,7 +43,7 @@ server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     content: [{ type: 'text', text: JSON.stringify(payload), annotations: { audience: ['user'] } }],
     structuredContent: payload,
     _meta: { fixture: 'retained' },
-    isError: params.name === 'tool_error',
+    isError: ['tool_error', 'schema_error'].includes(params.name),
   };
 });
 await server.connect(new StdioServerTransport());
