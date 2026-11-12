@@ -29,6 +29,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # Cancel in-progress runs for the same branch when a new commit lands.
 concurrency:
   group: ci-${{ github.ref }}
