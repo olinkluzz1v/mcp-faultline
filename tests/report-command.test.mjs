@@ -83,6 +83,25 @@ test('report accepts complete BatchReport JSON produced by the run command', asy
   assert.equal(await readFile(source, 'utf8'), original);
 });
 
+test('report accepts JSON-omitted opaque tool payloads without inventing data', async t => {
+  for (const field of ['args', 'data', 'raw']) await t.test(field, async t => {
+    const item = run(true);
+    const call = {
+      index: 0, toolName: 'custom', args: {}, result: { status: 'success', data: 'value' },
+      startedAt: 0, durationMs: 1, executed: true,
+    };
+    if (field === 'args') call.args = undefined;
+    if (field === 'data') call.result.data = undefined;
+    if (field === 'raw') call.result = { status: 'malformed', message: 'No raw value', raw: undefined };
+    item.trajectory.calls = [call];
+    const f = await fixture(t, batch([item]));
+    const result = await invoke(f.cwd, [f.source, '--out', f.out]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(await readFile(f.out, 'utf8'), /<strong>1 \/ 1<\/strong> runs passed/);
+    assert.equal(await readFile(f.source, 'utf8'), f.original);
+  });
+});
+
 test('report supports legacy missing provenance without inventing zero injections', async t => {
   const input = batch([legacyRun()]);
   delete input.stats.byFault;
@@ -151,6 +170,22 @@ test('report gives clear errors for missing files and invalid JSON', async t => 
   assert.notEqual(invalid.code, 0);
   assert.match(invalid.stderr, /invalid JSON/i);
   assert.deepEqual(await readdir(f.cwd), ['saved.json']);
+});
+
+test('report rejects a FIFO input without waiting for a writer', { skip: process.platform === 'win32' }, async t => {
+  const f = await fixture(t);
+  const fifo = join(f.cwd, 'pipe.json');
+  await execute('mkfifo', [fifo]);
+  let result;
+  try {
+    await execute(process.execPath, [cli, 'report', fifo, '--out', f.out], {
+      cwd: f.cwd, timeout: 3000, killSignal: 'SIGKILL',
+    });
+    assert.fail('Expected non-regular input to be rejected');
+  } catch (error) { result = error; }
+  assert.equal(result.code, 1, 'Must reject the input rather than hang until timeout');
+  assert.match(result.stderr, /input is not a regular file/i);
+  await assert.rejects(readFile(f.out), { code: 'ENOENT' });
 });
 
 test('report rejects malformed batches before touching existing output', async t => {

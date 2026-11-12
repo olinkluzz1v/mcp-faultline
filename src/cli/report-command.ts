@@ -1,4 +1,4 @@
-import { open, realpath, lstat, mkdtemp, writeFile, link, rename, rm } from 'node:fs/promises';
+import { open, realpath, stat, lstat, mkdtemp, writeFile, link, rename, rm } from 'node:fs/promises';
 import { resolve, dirname, basename, join } from 'node:path';
 import type { Stats } from 'node:fs';
 import { parseBatchReport } from '../report/parse.js';
@@ -63,6 +63,8 @@ export async function runReportCommand(args: ReportCommandArgs): Promise<number>
   let text: string;
   try {
     source = await realpath(resolve(args.source));
+    // Opening a named pipe can wait indefinitely before a descriptor is returned.
+    if (!(await stat(source)).isFile()) throw new Error('Input is not a regular file.');
     const file = await open(source, 'r');
     try {
       sourceStat = await file.stat();

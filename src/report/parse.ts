@@ -11,12 +11,18 @@ const assertion = z.looseObject({
   type: z.string(), target: z.string(), passed: z.boolean(), message: z.string().optional(),
 });
 const result = z.discriminatedUnion('status', [
-  z.looseObject({ status: z.literal('success'), data: z.unknown() }),
+  z.looseObject({ status: z.literal('success'), data: z.unknown().optional() }),
   z.looseObject({ status: z.literal('error'), message: z.string(), code: z.string().optional() }),
   z.looseObject({ status: z.literal('timeout'), message: z.string() }),
-  z.looseObject({ status: z.literal('malformed'), raw: z.unknown(), message: z.string() }),
+  z.looseObject({ status: z.literal('malformed'), raw: z.unknown().optional(), message: z.string() }),
   z.looseObject({ status: z.literal('policy_violation'), message: z.string(), tool: z.string(), reason: z.string() }),
-]);
+]).transform(value => {
+  // JSON omits undefined opaque payloads. Restore the undefined property for
+  // the existing runtime types without inventing a replacement value.
+  if (value.status === 'success') return { ...value, data: value.data };
+  if (value.status === 'malformed') return { ...value, raw: value.raw };
+  return value;
+});
 
 // Loose objects preserve additional metadata; known fields are never coerced or
 // filled with defaults. Missing injection provenance must remain missing.
@@ -39,9 +45,9 @@ const runSchema = z.looseObject({
     status: z.enum(['completed', 'failed', 'aborted', 'timeout']),
     error: z.string().optional(), agentFinalMessage: z.string().optional(),
     calls: z.array(z.looseObject({
-      index: count, toolName: z.string(), args: z.unknown(), result,
+      index: count, toolName: z.string(), args: z.unknown().optional(), result,
       startedAt: timestamp, durationMs: duration, executed: z.boolean(),
-    })),
+    }).transform(call => ({ ...call, args: call.args }))),
     events: z.array(z.looseObject({
       index: count, actor: z.enum(['agent', 'policy', 'executor']),
       type: z.enum(['tool_attempt', 'policy_decision', 'tool_execution', 'tool_result']),

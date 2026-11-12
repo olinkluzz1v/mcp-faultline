@@ -36,9 +36,11 @@ image notices. Environment configuration is outside scope.
   `ubuntu-24.04`; retain Node 20 as the project's compatibility test target.
 - [x] Document the command, accepted input, recomputed statistics, file safety,
   and failure behavior in README.md and docs/reporting.md.
-- [ ] Run typecheck, build, npm test, test:all, and diff checks. Preserve previous
-  generated reports. Open the PR against this fork's main and report CI results.
-  Leave the PR open; the task-specific instruction overrides standing auto-merge.
+- [x] Run typecheck, build, npm test, test:all, and diff checks. Preserve previous
+  generated reports.
+
+Delivery: open the PR against this fork's main and report CI results. Leave it
+open; the task-specific instruction overrides standing auto-merge.
 
 ## Review focus
 
@@ -51,3 +53,11 @@ image notices. Environment configuration is outside scope.
   missing provenance distinct from known zero injections.
 - Exercise real CLI processes and files; inspect literal counts and unchanged
   input bytes, without relying solely on exit status or renderer snapshots.
+
+## Local verification
+
+Linux, Node 24.22.1, npm 11.9.0: typecheck/build passed; smoke 15/15, reporting
+62/62 with no skips, embedded tasks 7/7, controls 21/21, replay MATCH. The initial
+CLI checks failed on the missing command. Independent review found omitted
+opaque JSON payloads and blocking FIFO input; both were reproduced and fixed
+with regression tests. Remote CI evidence belongs to the PR checks.
