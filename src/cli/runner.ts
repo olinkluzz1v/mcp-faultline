@@ -13,7 +13,7 @@ import { EmbeddedAgent } from '../agent/embedded.js';
 import type { AgentContext, AgentTool } from '../agent/types.js';
 import { PlanFaultInjector } from '../fault/injector.js';
 import { grade } from '../grader/grader.js';
-import type { RunResult } from '../report/types.js';
+import type { RunResult, InjectedFault } from '../report/types.js';
 
 /**
  * A single run — one task, one execution.
@@ -36,7 +36,8 @@ export async function runTask(
 
   const recorder = new TrajectoryRecorder(task.id);
   const injector = new PlanFaultInjector(task.fault_injection);
-  const tools = buildTools(sandbox, task, recorder, injector);
+  const injectedFaults: InjectedFault[] = [];
+  const tools = buildTools(sandbox, task, recorder, injector, injectedFaults);
 
   const agent = new EmbeddedAgent(stepFn);
   const context: AgentContext = {
@@ -87,6 +88,7 @@ export async function runTask(
     grade: gradeResult,
     trajectory,
     durationMs: Date.now() - startTime,
+    injectedFaults,
   };
 }
 
@@ -139,7 +141,8 @@ function buildTools(
   sandbox: TempFolderSandbox,
   task: Task,
   recorder: TrajectoryRecorder,
-  injector: PlanFaultInjector
+  injector: PlanFaultInjector,
+  injectedFaults: InjectedFault[]
 ): AgentTool[] {
   const allToolNames = new Set<string>([
     ...task.allowed_tools,
@@ -165,6 +168,7 @@ function buildTools(
       task,
       recorder,
       injector,
+      injectedFaults,
       nextIndex,
       nextCallNumber
     )
@@ -188,6 +192,7 @@ function makeTool(
   task: Task,
   recorder: TrajectoryRecorder,
   injector: PlanFaultInjector,
+  injectedFaults: InjectedFault[],
   nextIndex: () => number,
   nextCallNumber: (toolName: string) => number
 ): AgentTool {
@@ -254,6 +259,7 @@ function makeTool(
 
       // ─── Step 3a: mode 'instead' — short-circuit, do NOT call tool ───
       if (decision.mode === 'instead') {
+        injectedFaults.push({ faultType: decision.faultType, toolName, callNumber, mode: decision.mode });
         await recorder.recordEvent({
           actor: 'executor',
           type: 'tool_execution',
@@ -282,6 +288,11 @@ function makeTool(
       // ─── Step 4: real execution (mode 'none' or 'after') ───
       try {
         const data = await executeRealTool(toolName, args, sandbox);
+
+        // A failed real execution never reaches the after-mode injection.
+        if (decision.mode === 'after') {
+          injectedFaults.push({ faultType: decision.faultType, toolName, callNumber, mode: decision.mode });
+        }
 
         await recorder.recordEvent({
           actor: 'executor',
