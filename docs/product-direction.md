@@ -21,16 +21,40 @@ state against explicit expectations, rather than trusting the agent's claim.
 A ticket fixture is a proposed extension; current side-effect checks are
 file-based.
 
+## Shipped foundation
+
+As of [main at 4b819c3](https://github.com/olinkluzz1v/mcp-faultline/commit/4b819c3031e7bb7bb5b2531a4389e20a951fa919),
+the project already provides:
+
+- YAML task and fault specifications, a scripted embedded agent, local filesystem
+  assertions, recovery/integrity checks, and negative controls without API keys.
+- Structured tool results in agent history, one record per wrapper invocation,
+  synthetic success data, and separate execution/completion evidence. See the
+  [tool-result contract](../ARCHITECTURE.md#tool-results-and-execution-evidence).
+- JSON, Markdown, and standalone offline HTML reports, plus conversion of a saved
+  batch to HTML without re-execution. See [reporting](reporting.md).
+- Single-run replay using recorded responses and completed writes in a fresh
+  sandbox, within the documented partial-effect and legacy-record limits.
+- A stdio proxy for external MCP clients. A versioned, reproducible real-agent
+  and model workflow still needs the end-to-end evidence specified below.
+
+These pieces support the intended workflow; the integrated product experience
+below is still a release goal. In particular, the current `run` command prints
+failed grades but does not set a failure exit code for them. File-based checks
+do not establish the outcomes of arbitrary external services.
+
 ## Reference projects
 
-Use these projects as benchmarks for product decisions:
+Use these projects as references for product decisions:
 
 | Reference | What to study |
 | --- | --- |
 | [mcp-chaos](https://github.com/ajinb/mcp-chaos) | Its no-key demo, fault configuration, and separation of simulation and live proxy use. |
 | [ResiliReplay](https://github.com/aliengineering-byte/resilireplay) | Its evidence, regression workflow, and explicit distinction between fixture and live validation. |
 
-These references come from their documentation, reviewed on 2026-11-12.
+Reviewed README snapshots on 2026-11-12:
+[mcp-chaos at a74bb67](https://github.com/ajinb/mcp-chaos/blob/a74bb67e110cd157436cba8b9c4f1f75205c5684/README.md)
+and [ResiliReplay at f101725](https://github.com/aliengineering-byte/resilireplay/blob/f1017259316c892b33a7b23f7a8a3a9586df0eaa/README.md).
 We have not run a comparative benchmark. Do not claim missing competitor
 features, uniqueness, or better speed or reliability without direct evidence.
 Before release, recheck existing public comparisons against current sources.
@@ -41,25 +65,24 @@ rerun after a fix. Report installation and model latency separately from harness
 overhead. Mark unsupported comparisons as not applicable. Improvement in a
 specific workflow is enough; matching every competitor feature is not a goal.
 
-## First useful release
+## Remaining goals for the first focused release
 
-1. Correct tool-result delivery and recording: fault status reaches the agent,
-   successful synthetic data remains usable, and execution/injection counts
-   reflect what actually happened.
-2. A no-key local demo with known successful recovery and a known failure that
-   the grader catches. Make the scripted nature of this demo explicit.
-3. One documented integration tested end to end with a real agent and model,
+1. Package the existing scripted evaluation into a guided no-key local demo with
+   known successful recovery and a known failure that the grader catches. Make
+   the scripted nature of this demo explicit.
+2. One documented integration tested end to end with a real agent and model,
    with exact versions, configuration, and evidence. A proxy connection or
    scripted fixture alone does not establish that integration.
-4. Three small scenarios: transient timeout, lost acknowledgement after a
+3. Package three small scenarios: transient timeout, lost acknowledgement after a
    successful write, and incomplete data. Each specifies acceptable outcomes,
    verifies independent state where applicable, and has a known bad control.
-5. Clear offline HTML evidence, machine-readable results, and CI exit behavior
-   that distinguishes passing expectations, failed expectations, and execution
-   errors. Reuse the existing reporting core.
-6. Save a scenario and rerun it against the changed agent in fresh isolated
-   state. Reading a saved report or replaying old responses is not evidence that
-   a new agent version has fixed the problem.
+4. Reuse the existing offline HTML and machine-readable reports to explain each
+   outcome. Define and test CLI/CI exit behavior that distinguishes passing
+   expectations, failed expectations, and execution errors.
+5. Provide a documented path from a retained scenario to a fresh run against a
+   changed external agent in isolated test state. Existing YAML scenarios can
+   already be versioned. Reading a saved report or replaying old responses is
+   not evidence that a new agent version has fixed the problem.
 
 Use local disposable fixtures for the demonstration. Fault schedules and checks
 can be repeatable while model behavior varies: retain relevant configuration,
