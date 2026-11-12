@@ -189,6 +189,16 @@ rejections), test:all (7/7 runs, 21/21 controls, replay MATCH), and diff formatt
 GitHub CI is separate from these local checks; consult PR #10's final-head checks.
 The subsequent documentation-only commit does not change the live-tested code.
 
+Subsequent Codex review at documentation commit
+`d1198805b55f3dcf80c8fa0e13ce8331c5986290` reported no actionable defects;
+build and diff-format checks passed, but its ticket tests encountered MCP
+connection-closed errors. The user then ran the isolated failing test directly in
+the Ubuntu SSH terminal at that commit: 1 passed, 0 failed. The user also ran
+`npm run test:codex-ticket` there: 27 passed, 0 failed, 0 cancelled, 0 skipped.
+These terminal results are user-reported, not reruns performed for this
+documentation update. The execution difference is observed; its precise cause
+is not established. The review's ticket-test limitation remains part of the record.
+
 All four new sessions completed with valid PASS, one ticket and exit code 0:
 
 | Scenario | Applied faults | Local evidence directory |
