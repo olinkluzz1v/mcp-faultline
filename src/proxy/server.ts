@@ -82,12 +82,6 @@ export async function createProxyServer(
 
   // --- tools/list -----------------------------------------------------
   server.setRequestHandler(ListToolsRequestSchema, async (request) => {
-    emit(onEvent, {
-      type: 'request_forwarded',
-      actor: 'agent',
-      message: 'tools/list',
-      data: { method: 'tools/list' },
-    });
     try {
       const result = await onListTools(request);
       emit(onEvent, {
@@ -138,15 +132,9 @@ export async function createProxyServer(
     message: 'proxy server listening on stdio',
   });
 
-  let closedFlag = false;
-  async function close(): Promise<void> {
-    if (closedFlag) return;
-    closedFlag = true;
-    try {
-      await server.close();
-    } catch {
-      // transport already gone
-    }
+  let closing: Promise<void> | undefined;
+  function close(): Promise<void> {
+    return closing ??= server.close();
   }
 
   return { server, closed, close };

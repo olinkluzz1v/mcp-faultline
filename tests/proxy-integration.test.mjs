@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, mkdir, symlink, readdir } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolResultSchema, JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js';
 
 const fixture = name => fileURLToPath(new URL(`./fixtures/${name}.mjs`, import.meta.url));
@@ -14,51 +16,99 @@ const fault = (tool, mode, kind = 'timeout', callNumber = 1) => ({
 });
 const options = { timeout: 15_000 };
 
-async function session(t, faultPlan = [], cli = false) {
+async function bounded(promise, ms = 5000) {
+  let timer;
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Subprocess did not finish within ${ms}ms`)), ms);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
+async function launch(t, { faultPlan = [], capture = true, prepare, extra = [], env = {}, nodeArgs = [], serverMode = '' } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'faultline-proxy-'));
-  const config = join(directory, 'config.json');
-  await writeFile(config, JSON.stringify({ directory, upstream: fixture('proxy-upstream'), faultPlan }));
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: ['--import', fixture('capture-proxy-stdout'), ...(cli ? [
-      fileURLToPath(new URL('../dist/cli.js', import.meta.url)), 'proxy',
-      '--server', `${JSON.stringify(process.execPath)} ${JSON.stringify(fixture('proxy-upstream'))} ${JSON.stringify(directory)}`,
-    ] : [fixture('proxy-host'), config])],
-    cwd: directory,
-    env: { PROXY_TEST_STDOUT: join(directory, 'stdout.jsonl') },
-    stderr: 'pipe',
-  });
-  let stderr = '';
-  transport.stderr.on('data', chunk => { stderr += chunk; });
+  const capturePath = join(directory, 'capture.json');
+  const taskPath = join(directory, 'task.yaml');
+  await writeFile(taskPath, JSON.stringify({
+    id: 'proxy-session', name: 'Proxy session', goal: 'Test protocol evidence', allowed_tools: ['echo'],
+    recovery: { primary: 'echo' }, grader: { state_assertions: [], policy_assertions: [] },
+    fault_injection: faultPlan,
+  }));
+  if (prepare) await prepare({ directory, capturePath, taskPath });
+  const child = spawn(process.execPath, [
+    ...nodeArgs,
+    fileURLToPath(new URL('../dist/cli.js', import.meta.url)), 'proxy',
+    '--server', `${JSON.stringify(process.execPath)} ${JSON.stringify(fixture('proxy-upstream'))} ${JSON.stringify(directory)} ${serverMode}`,
+    '--task', taskPath, '--cwd', directory, ...(capture ? ['--capture', capturePath] : []), ...extra,
+  ], { cwd: directory, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+  let stdout = '', stderr = '';
+  child.stdout.on('data', chunk => { stdout += chunk; });
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  // Use the SDK's stream transport over the production CLI's pipes. Unlike
+  // StdioClientTransport.close(), EOF here cannot silently escalate to SIGTERM.
+  const transport = new StdioServerTransport(child.stdout, child.stdin);
+  child.stdout.on('end', () => { void transport.close(); });
   const client = new Client({ name: 'proxy-integration-client', version: '1' });
+  const exited = new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', (code, signal) => resolve({ code, signal }));
+  });
   t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await bounded(exited);
     await client.close();
-    // Ensure fixture processes do not survive a failed assertion/test.
     try { process.kill(Number(await readFile(join(directory, 'upstream.pid'), 'utf8')), 'SIGKILL'); }
     catch (error) { if (error.code !== 'ESRCH' && error.code !== 'ENOENT') throw error; }
     await rm(directory, { recursive: true, force: true });
   });
-  await client.connect(transport, { timeout: 5000 });
-  await client.listTools();
   return {
-    client, directory,
+    client, child, directory, capturePath, exited,
+    get stderr() { return stderr; },
+    get stdout() { return stdout; },
+    async connect() {
+      await client.connect(transport, { timeout: 3000 });
+      await client.listTools();
+    },
     async lines(name) {
       try { return (await readFile(join(directory, name), 'utf8')).trim().split('\n').map(JSON.parse); }
       catch (error) { if (error.code === 'ENOENT') return []; throw error; }
     },
     call: (name, args = {}) => client.callTool({ name, arguments: args }, undefined, { timeout: 3000 }),
-    async finish() {
-      await client.close();
-      const wire = await readFile(join(directory, 'stdout.jsonl'), 'utf8');
-      assert.ok(wire.endsWith('\n'), 'stdout contains complete protocol messages');
-      for (const line of wire.trimEnd().split('\n')) JSONRPCMessageSchema.parse(JSON.parse(line));
-      if (cli) assert.match(stderr, /\[proxy\]/, 'CLI diagnostics stay on stderr');
-      else assert.equal(stderr, '', 'test host has no unexpected diagnostics');
-      const pid = Number(await readFile(join(directory, 'upstream.pid'), 'utf8'));
-      assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, 'upstream child was cleaned up');
-      if (!cli) return JSON.parse(await readFile(join(directory, 'records.json'), 'utf8'));
+    async finish(expectedCode = 0, signal) {
+      if (signal) child.kill(signal);
+      else child.stdin.end();
+      const exit = await bounded(exited);
+      assert.deepEqual(exit, { code: expectedCode, signal: null }, stderr);
+      if (stdout) {
+        assert.ok(stdout.endsWith('\n'), 'stdout contains complete protocol messages');
+        for (const line of stdout.trimEnd().split('\n')) JSONRPCMessageSchema.parse(JSON.parse(line));
+      }
+      if (expectedCode !== 0) assert.doesNotMatch(stderr, /exited cleanly/);
+      try {
+        const pid = Number(await readFile(join(directory, 'upstream.pid'), 'utf8'));
+        assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, 'upstream child was cleaned up');
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (!capture) {
+        await assert.rejects(readFile(capturePath), { code: 'ENOENT' });
+        assert.ok((await readdir(directory)).every(name => !/capture|report/.test(name)));
+        return;
+      }
+      const saved = JSON.parse(await readFile(capturePath, 'utf8'));
+      assert.equal(saved.kind, 'proxy-capture');
+      assert.equal(saved.schemaVersion, 1);
+      assert.equal(saved.captureStatus, 'complete');
+      assert.deepEqual(saved.events.map(e => e.index), saved.events.map((_, i) => i));
+      assert.ok(saved.events.every(e => Number.isFinite(e.timestamp)));
+      assert.ok(saved.events.every(e => e.timestamp >= saved.startedAt && e.timestamp <= saved.endedAt));
+      return { ...saved, calls: saved.toolCalls };
     },
   };
+}
+
+async function session(t, faultPlan = [], noCapture = false) {
+  const s = await launch(t, { faultPlan, capture: !noCapture });
+  await s.connect();
+  return s;
 }
 
 function response(payload, isError = false) {
@@ -78,6 +128,7 @@ test('after preserves the original upstream isError response and applies no inje
   assert.deepEqual(records.faults, []);
   assert.equal(records.calls[0].upstreamOutcome, 'tool_error');
   assert.deepEqual(records.calls[0].upstreamResult, actual);
+  assert.deepEqual(records.calls[0].response, actual);
 });
 
 test('structured tool errors pass through even when they differ from the success output schema', options, async t => {
@@ -106,6 +157,7 @@ for (const mode of ['instead', 'after']) {
     assert.equal((await s.lines('attempts.jsonl')).length, mode === 'after' ? 1 : 0);
     assert.equal(calls.length, 1);
     assert.equal(faults[0].mode, mode);
+    assert.deepEqual(calls[0].response, actual);
   });
 }
 
@@ -148,6 +200,8 @@ for (const mode of ['instead', 'after']) {
     assert.equal(calls.length, mode === 'after' ? 2 : 1);
     assert.deepEqual(calls.map(c => c.index), mode === 'after' ? [0, 1] : [0]);
     assert.equal(calls[0].result.status, 'timeout');
+    assert.deepEqual(calls[0].response, { isError: true,
+      content: [{ type: 'text', text: 'injected acknowledgement timeout' }] });
     assert.equal(calls[0].forwarded, mode === 'after');
     assert.equal(calls[0].executed, mode === 'after' ? 'unknown' : false);
     assert.equal(calls[0].upstreamOutcome, mode === 'after' ? 'success' : 'not_forwarded');
@@ -160,7 +214,8 @@ for (const name of ['protocol_error', 'invalid_result', 'disconnect']) {
   test(`${name} has uncertain execution and no after injection`, options, async t => {
     const s = await session(t, [fault(name, 'after')]);
     await assert.rejects(s.call(name));
-    const { calls, faults } = await s.finish();
+    const { calls, faults, termination, completion } = await s.finish(name === 'disconnect' ? 1 : 0);
+    assert.equal(calls[0].response, undefined, 'rejected requests must not have fabricated responses');
     assert.equal(calls.length, 1, 'the rejected invocation must still be recorded once');
     assert.equal(calls[0].result.status, 'error');
     assert.equal(calls[0].forwarded, true);
@@ -170,6 +225,8 @@ for (const name of ['protocol_error', 'invalid_result', 'disconnect']) {
     assert.equal(calls[0].upstreamResult, undefined);
     assert.deepEqual(faults, []);
     if (name === 'disconnect') {
+      assert.equal(termination.reason, 'upstream_disconnect');
+      assert.equal(completion, 'failed');
       assert.equal(await readFile(join(s.directory, 'value.txt'), 'utf8'), 'written before disconnect');
     }
   });
@@ -220,4 +277,206 @@ test('synthetic success exposes application content, not registry bookkeeping', 
   assert.deepEqual(actual.structuredContent, { _partial: true });
   assert.deepEqual(JSON.parse(actual.content[0].text), { _partial: true });
   assert.equal('_fault' in actual, false);
+});
+
+
+test('normal EOF without capture exits promptly and cleans up the child', options, async t => {
+  const s = await session(t, [], true);
+  await s.call('echo', { message: 'done' });
+  await s.finish();
+});
+
+for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+  test(`${signal} without capture stays nonzero`, options, async t => {
+    const s = await session(t, [], true);
+    await s.finish(code, signal);
+  });
+  test(`${signal} finalizes completed and outstanding call evidence`, options, async t => {
+    const s = await session(t);
+    const actual = await s.call('write_file', { content: 'completed before signal' });
+    const pending = s.call('echo', { delay: 2000 });
+    const rejected = assert.rejects(pending);
+    for (let i = 0; (await s.lines('attempts.jsonl')).length < 2; i++) {
+      assert.ok(i < 100, 'upstream attempt appeared'); await delay(10);
+    }
+    const saved = await s.finish(code, signal);
+    await rejected;
+    assert.equal(saved.termination.reason, 'signal');
+    assert.equal(saved.termination.signal, signal);
+    assert.equal(saved.completion, 'interrupted');
+    assert.equal(saved.cleanupSucceeded, true);
+    assert.equal(saved.calls.length, 2);
+    assert.deepEqual(saved.calls[0].response, actual);
+    assert.equal(saved.calls[1].upstreamOutcome, 'unknown');
+    assert.equal(saved.calls[1].response, undefined);
+    assert.equal(await readFile(join(s.directory, 'value.txt'), 'utf8'), 'completed before signal');
+    assert.equal((await s.lines('writes.jsonl')).length, 1);
+  });
+}
+
+test('normal EOF saves explicit capture metadata and no credential environment', options, async t => {
+  const sentinel = 'not-a-real-secret-do-not-capture-environment';
+  const s = await launch(t, { env: { PROXY_PRIVATE_TEST_VALUE: sentinel } });
+  await s.connect();
+  const actual = await s.call('echo', { status: 'ordinary data' });
+  const saved = await s.finish();
+  assert.equal(saved.termination.reason, 'client_eof');
+  assert.equal(saved.completion, 'completed');
+  assert.equal(saved.cleanupSucceeded, true);
+  assert.ok(saved.runId && saved.endedAt >= saved.startedAt);
+  assert.equal(saved.upstream.cwd, s.directory);
+  assert.deepEqual(saved.faultPlan, []);
+  assert.deepEqual(saved.calls[0].response, actual);
+  assert.equal('env' in saved.upstream, false);
+  assert.ok(!(await readFile(s.capturePath, 'utf8')).includes(sentinel));
+});
+
+for (const kind of ['file', 'directory', 'symlink', 'dangling symlink', 'missing parent']) {
+  test(`capture rejects ${kind} before spawning upstream`, options, async t => {
+    const sentinel = 'existing capture must survive';
+    const s = await launch(t, { prepare: async ({ directory, capturePath }) => {
+      if (kind === 'file') await writeFile(capturePath, sentinel);
+      if (kind === 'directory') await mkdir(capturePath);
+      if (kind.includes('symlink')) {
+        const target = join(directory, 'target.json');
+        if (kind === 'symlink') await writeFile(target, sentinel);
+        await symlink(target, capturePath);
+      }
+    }, extra: kind === 'missing parent' ? ['--capture', 'missing/capture.json'] : [] });
+    const result = await bounded(s.exited);
+    assert.deepEqual(result, { code: 2, signal: null }, s.stderr);
+    await assert.rejects(readFile(join(s.directory, 'upstream.pid')), { code: 'ENOENT' });
+    assert.equal(s.stdout, '');
+    assert.match(s.stderr, /capture/i);
+    if (kind === 'file' || kind === 'symlink') assert.equal(await readFile(s.capturePath, 'utf8'), sentinel);
+  });
+}
+
+test('a destination created during the session is never replaced', options, async t => {
+  const s = await session(t);
+  await s.call('echo');
+  await writeFile(s.capturePath, 'another capture');
+  s.child.stdin.end();
+  assert.deepEqual(await bounded(s.exited), { code: 2, signal: null }, s.stderr);
+  assert.equal(await readFile(s.capturePath, 'utf8'), 'another capture');
+  assert.doesNotMatch(s.stderr, /exited cleanly/);
+});
+
+test('capture write failure after the session cannot exit successfully', options, async t => {
+  const s = await session(t);
+  await s.call('echo');
+  await mkdir(s.capturePath);
+  s.child.stdin.end();
+  assert.deepEqual(await bounded(s.exited), { code: 2, signal: null }, s.stderr);
+  assert.match(s.stderr, /capture/i);
+  assert.doesNotMatch(s.stderr, /exited cleanly/);
+});
+
+test('invalid task setup is retained as failure without upstream work', options, async t => {
+  const s = await launch(t, { prepare: ({ taskPath }) => writeFile(taskPath, 'not: [valid') });
+  await bounded(s.exited);
+  const saved = await s.finish(2);
+  assert.equal(saved.termination.reason, 'setup_error');
+  assert.equal(saved.completion, 'failed');
+  assert.equal(saved.calls.length, 0);
+  await assert.rejects(readFile(join(s.directory, 'upstream.pid')), { code: 'ENOENT' });
+});
+
+async function waitForFile(path) {
+  for (let i = 0; i < 300; i++) {
+    try { return await readFile(path, 'utf8'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await delay(10);
+  }
+  throw new Error('Fixture did not start within 3 seconds');
+}
+
+for (const [signal, code] of [[undefined, 0], ['SIGINT', 130], ['SIGTERM', 143]]) {
+  test(`${signal ?? 'EOF'} during upstream initialization still finalizes and cleans up`, options, async t => {
+    const s = await launch(t, { serverMode: 'hang-startup' });
+    await waitForFile(join(s.directory, 'upstream.pid'));
+    const saved = await s.finish(code, signal);
+    assert.equal(saved.termination.reason, signal ? 'signal' : 'client_eof');
+    assert.equal(saved.cleanupSucceeded, true);
+    assert.deepEqual(saved.calls, []);
+    assert.deepEqual(saved.faults, []);
+  });
+}
+
+test('upstream setup failure cleans up and retains a failed capture', options, async t => {
+  const s = await launch(t, { serverMode: 'fail-startup' });
+  await bounded(s.exited);
+  const saved = await s.finish(2);
+  assert.equal(saved.termination.reason, 'setup_error');
+  assert.equal(saved.cleanupSucceeded, true);
+  assert.equal(saved.completion, 'failed');
+  assert.equal(saved.errors[0].phase, 'setup');
+});
+
+for (const serverMode of ['', 'fail-startup']) {
+  test(`cleanup failure ${serverMode ? 'during setup' : 'after EOF'} stays nonzero and is captured`, options, async t => {
+    const s = await launch(t, { serverMode, nodeArgs: ['--import', fixture('proxy-cleanup-error')] });
+    if (serverMode) await bounded(s.exited);
+    else await s.connect();
+    const saved = await s.finish(2);
+    assert.equal(saved.cleanupSucceeded, false);
+    assert.equal(saved.completion, 'failed');
+    assert.equal(saved.errors[0].phase, 'cleanup');
+    assert.match(saved.errors[0].message, /fixture cleanup failure/);
+  });
+}
+
+test('a signal during EOF cleanup cannot turn unfinished finalization into success', options, async t => {
+  const s = await session(t);
+  const pending = assert.rejects(s.call('echo', { delay: 2000 }));
+  await waitForFile(join(s.directory, 'attempts.jsonl'));
+  s.child.stdin.end();
+  for (let i = 0; !s.stderr.includes('proxy_shutdown'); i++) {
+    assert.ok(i < 100, 'cleanup started'); await delay(10);
+  }
+  const saved = await s.finish(143, 'SIGTERM');
+  await pending;
+  assert.equal(saved.termination.reason, 'client_eof', 'retain the original termination cause');
+  assert.equal(saved.completion, 'interrupted');
+  assert.equal(saved.calls[0].upstreamOutcome, 'unknown');
+});
+
+for (const [extra, code] of [[['--help'], 0], [['--unknown-option'], 2], [['--capture', ''], 2]]) {
+  test(`proxy usage ${extra.join(' ')} exits ${code} before upstream startup`, options, async t => {
+    const s = await launch(t, { extra });
+    assert.deepEqual(await bounded(s.exited), { code, signal: null }, s.stderr);
+    await assert.rejects(readFile(join(s.directory, 'upstream.pid')), { code: 'ENOENT' });
+    await assert.rejects(readFile(s.capturePath), { code: 'ENOENT' });
+    if (code === 0) assert.match(s.stdout, /--capture <file.json>/);
+  });
+}
+
+test('EOF after SDK initialize bytes does not wait for stalled upstream initialization', options, async t => {
+  const s = await launch(t, { serverMode: 'hang-startup' });
+  const connecting = s.connect().catch(() => undefined);
+  await waitForFile(join(s.directory, 'upstream.pid'));
+  const saved = await s.finish();
+  await connecting;
+  assert.equal(saved.termination.reason, 'client_eof');
+  assert.equal(saved.cleanupSucceeded, true);
+});
+
+test('a closed stderr reader cannot bypass EOF cleanup and capture', options, async t => {
+  const s = await session(t);
+  const result = await s.call('echo', { message: 'retain this response' });
+  s.child.stderr.destroy();
+  const saved = await s.finish(2);
+  assert.equal(saved.cleanupSucceeded, true);
+  assert.equal(saved.completion, 'failed');
+  assert.deepEqual(saved.calls[0].response, result);
+  assert.ok(saved.errors.some(error => error.phase === 'diagnostics'));
+});
+
+test('completed requests are not cancelled again at shutdown', options, async t => {
+  const s = await session(t);
+  for (let i = 0; i < 15; i++) await s.call('echo', { i });
+  const saved = await s.finish();
+  assert.equal(saved.calls.length, 15);
+  assert.deepEqual(await s.lines('cancellations.jsonl'), []);
+  assert.doesNotMatch(s.stderr, /MaxListenersExceededWarning/);
 });

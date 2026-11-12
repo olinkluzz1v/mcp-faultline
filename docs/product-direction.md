@@ -44,6 +44,10 @@ The current fork provides:
   client and isolated fixture server: faithful responses, applied-fault evidence,
   concurrent invocation identities, and independent write checks. Remote
   forwarding and responses are distinguished from proof of side effects.
+  Opt-in JSON session captures now retain the effective plan, lifecycle events,
+  original and produced responses, and termination outcome. EOF, signals and
+  upstream loss share cleanup/finalization; capture-output errors stay nonzero.
+  Captures are protocol evidence, without external-agent grading or replay.
   A versioned, reproducible real-agent and model workflow still needs the
   end-to-end evidence specified below.
 
