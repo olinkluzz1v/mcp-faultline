@@ -18,7 +18,8 @@
  * would force a breaking change across existing modules.
  */
 
-import type { FaultInjection } from '../task/schema.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { FaultInjection, InjectionMode } from '../task/schema.js';
 import type { ToolCallRecord } from '../mcp/types.js';
 
 // Re-export so proxy code does not need to reach into task/.
@@ -158,8 +159,14 @@ export interface ProxyEvent {
  * from embedded and external modes stay comparable.
  */
 export interface ProxyFaultRecord {
-  /** Tool call index (1-based) this fault was applied to. */
+  /** Per-tool invocation number (1-based) this fault was applied to. */
   readonly callNumber: number;
+
+  /** Global invocation index (0-based). Absent in legacy records; do not infer. */
+  readonly callIndex?: number;
+
+  /** Applied mode. Absent in legacy records; do not infer from the fault kind. */
+  readonly mode?: InjectionMode;
 
   /** Tool name the fault targeted. */
   readonly toolName: string;
@@ -179,10 +186,29 @@ export interface ProxyFaultRecord {
 // ---------------------------------------------------------------------------
 
 /**
+ * Remote observations, not local execution/side-effect evidence. The common
+ * call fields retain their ToolCallRecord meanings; `executed` additionally
+ * permits unknown because an MCP response cannot prove remote execution.
+ * New proxy records never set the embedded-only executionSucceeded flag.
+ */
+export interface ProxyToolCallRecord extends Omit<ToolCallRecord, 'executed'> {
+  /** False for a short-circuit; unknown for forwarded calls. Legacy booleans remain readable. */
+  executed: boolean | 'unknown';
+  /** Whether the proxy attempted an upstream tools/call request, not proof of remote receipt. */
+  forwarded?: boolean;
+  /** Observed valid tool result, or unknown after rejection/disconnection. Absent in legacy records. */
+  upstreamOutcome?: 'not_forwarded' | 'success' | 'tool_error' | 'unknown';
+  /** Unmodified valid upstream MCP result, before any after replacement. */
+  upstreamResult?: CallToolResult;
+  /** 1-based invocation number for this tool, allocated before awaiting a response. */
+  callNumber?: number;
+}
+
+/**
  * Summary of a completed proxy run.
  *
- * Returned to the CLI, serialized into the report, and paired with the
- * raw trajectory JSONL for replay.
+ * Programmatic summary shape. The CLI currently logs lifecycle events;
+ * exporting proxy captures or grading them is not implemented.
  */
 export interface ProxyResult {
   /** Overall success: did the proxy run and shut down cleanly? */
@@ -195,7 +221,7 @@ export interface ProxyResult {
   readonly events: readonly ProxyEvent[];
 
   /** All tool calls observed by the proxy, in order. */
-  readonly toolCalls: readonly ToolCallRecord[];
+  readonly toolCalls: readonly ProxyToolCallRecord[];
 
   /** All faults injected during the run, in order. */
   readonly faults: readonly ProxyFaultRecord[];

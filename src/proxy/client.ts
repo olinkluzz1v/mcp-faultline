@@ -188,8 +188,9 @@ export async function createProxyClient(
       resolve();
     };
 
-    // Transport's onclose is the canonical signal for child exit.
-    transport.onclose = handleClose;
+    // Protocol owns the transport callbacks after connect(). Replacing
+    // transport.onclose would prevent the SDK rejecting pending requests.
+    client.onclose = handleClose;
   });
 
   // 7. Close helper — idempotent.

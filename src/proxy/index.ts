@@ -15,6 +15,7 @@ export type {
   ProxyEventType,
   ProxyActor,
   ProxyFaultRecord,
+  ProxyToolCallRecord,
   ProxyResult,
 } from './types.js';
 

@@ -40,8 +40,12 @@ The current fork provides:
   configuration/infrastructure errors return `2`, and interruptions remain nonzero.
 - Single-run replay using recorded responses and completed writes in a fresh
   sandbox, within the documented partial-effect and legacy-record limits.
-- A stdio proxy for external MCP clients. A versioned, reproducible real-agent
-  and model workflow still needs the end-to-end evidence specified below.
+- A stdio proxy with [MCP protocol integration tests](proxy.md) using an SDK
+  client and isolated fixture server: faithful responses, applied-fault evidence,
+  concurrent invocation identities, and independent write checks. Remote
+  forwarding and responses are distinguished from proof of side effects.
+  A versioned, reproducible real-agent and model workflow still needs the
+  end-to-end evidence specified below.
 
 These pieces support the intended workflow; the real-agent integration and fresh
 external-agent regression experience below are still release goals. The local

@@ -5,7 +5,7 @@
 # Runs the full test suite on every push and pull request:
 #   1. Type-check (tsc --noEmit)
 #   2. Build (tsc)
-#   3. Proxy smoke
+#   3. Proxy smoke and MCP protocol integration tests
 #   4. Integrity smoke
 #   5. Idempotency smoke
 #   6. Embedded tool results and replay tests
@@ -59,6 +59,9 @@ jobs:
 
       - name: Proxy smoke
         run: npm run test:proxy-smoke
+
+      - name: MCP proxy protocol integration
+        run: npm run test:proxy
 
       - name: Integrity smoke
         run: npm run test:integrity-smoke
