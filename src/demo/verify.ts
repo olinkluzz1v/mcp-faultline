@@ -101,7 +101,7 @@ export function verifyTransientTimeoutRun(run: RunResult, policy: TransientTimeo
     // False booleans alone could describe permissions, wrong contents or other
     // unrelated failures. Require the existing grader's specific absence evidence.
     check(run.grade.stateResults.find(result => result.type === 'file_exists')?.message === `File does not exist: ${DEMO_PATH}`
-      && /\bENOENT\b/.test(run.grade.stateResults.find(result => result.type === 'file_contains')?.message ?? '')
+      && (run.grade.stateResults.find(result => result.type === 'file_contains')?.message ?? '').startsWith('ENOENT:')
       && run.grade.witness?.message === `File "${DEMO_PATH}" not found in either snapshot`
       && run.grade.integrityResults[0]?.message === `File written 0 times (expected exactly 1): ${DEMO_PATH}`,
     'The failure must specifically show an absent file and zero completed writes, not an unrelated error.');

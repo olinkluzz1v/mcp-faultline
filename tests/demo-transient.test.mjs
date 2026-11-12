@@ -184,6 +184,9 @@ test('transient verification rejects missing, contradictory or unrelated evidenc
       ['unrelated abort', run => { run.trajectory.error = 'Unexpected result'; }],
       ['file actually exists', run => { run.grade.stateResults[0].passed = true; }],
       ['read permission error', run => { run.grade.stateResults[1].message = 'EACCES: permission denied'; }],
+      ['error code mentioned only in path', run => {
+        run.grade.stateResults[1].message = "EACCES: permission denied, open '/tmp/ENOENT/receipt.txt'";
+      }],
       ['witness failure for another reason', run => { run.grade.witness.message = 'File did not change'; }],
       ['integrity failure for another reason', run => { run.grade.integrityResults[0].message = 'File written 2 times'; }],
     );

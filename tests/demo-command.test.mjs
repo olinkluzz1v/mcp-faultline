@@ -168,6 +168,39 @@ test('transient CLI requires a valid fixture and preserves every existing report
   }
 });
 
+test('transient CLI rejects an unrelated read error whose path contains ENOENT', async t => {
+  const { cwd, out } = await workspace(t);
+  const preload = join(cwd, 'permission-error.mjs');
+  // Model a read permission failure at the filesystem boundary. Keep the real
+  // missing-file state and the successful retry's read unchanged.
+  await writeFile(preload, `
+    import fs from 'node:fs/promises';
+    import { syncBuiltinESMExports } from 'node:module';
+    const readFile = fs.readFile;
+    fs.readFile = async (path, ...args) => {
+      try {
+        return await readFile(path, ...args);
+      } catch (error) {
+        if (String(path).endsWith('receipt.txt') && error.code === 'ENOENT') {
+          error.code = 'EACCES';
+          error.message = "EACCES: permission denied, open '/tmp/ENOENT/receipt.txt'";
+        }
+        throw error;
+      }
+    };
+    syncBuiltinESMExports();
+  `);
+  const result = await invoke(cwd, ['--scenario', 'transient-timeout', '--out', out], { preload });
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stdout, /Demo expectation mismatch/);
+  assert.doesNotMatch(result.stdout, /Demo verified/);
+  const stop = JSON.parse(await readFile(join(out, 'stop-on-timeout', 'report.json'), 'utf8')).runs[0];
+  assert.equal(stop.grade.passed, false);
+  assert.match(stop.grade.stateResults.find(result => result.type === 'file_contains').message, /^EACCES:.*ENOENT/);
+  const retry = JSON.parse(await readFile(join(out, 'retry-once', 'report.json'), 'utf8')).runs[0];
+  assert.equal(retry.grade.passed, true);
+});
+
 test('real CLI exits 1 for missing faults and unexpected passes, preserving truthful reports', async t => {
   const { cwd, out } = await workspace(t);
   const { entry } = await isolatedApp(cwd, task => { task.fault_injection = []; });
