@@ -1,0 +1,15 @@
+id: codex-ticket-lost-ack
+name: Ticket creation with a lost acknowledgement
+goal: Create exactly one ticket with the supplied reference and title.
+allowed_tools: [create_ticket, find_tickets]
+fault_injection:
+  - tool: create_ticket
+    call_number: 1
+    fault: timeout
+    mode: after
+    message: Ticket service acknowledgement timed out.
+# Only fault_injection is consumed by the proxy. The example evaluates independent
+# ticket state separately; these required task fields do not grade an external agent.
+recovery:
+  primary: create_ticket
+grader: {}

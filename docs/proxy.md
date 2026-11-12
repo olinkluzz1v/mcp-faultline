@@ -11,6 +11,14 @@ diagnostics to stderr; stdout contains only MCP JSON-RPC messages during a sessi
 Add `--capture <file.json>` to retain a versioned JSON session capture. Without
 that option the CLI creates no capture files. It does not produce an agent grade.
 
+The opt-in [Codex ticket example](../examples/codex-ticket/README.md) runs a
+separate, bounded state evaluator around this CLI. Its scripted controls are
+covered in normal CI. Bounded local live validation completed one baseline and
+three lost-ack runs, all valid PASS on the documented code commit. See the
+[example validation summary](../examples/codex-ticket/README.md#offline-validation-and-references)
+for versions, historical INVALID attempts and scope. That example does not add
+agent grading to the proxy or reinterpret its captures as embedded reports.
+
 ## Capture a session
 
 From the repository root after `npm ci` and `npm run build`, create the parent
@@ -127,7 +135,7 @@ streaming journal, or guaranteed delivery to the external client is implied.
   in internal records, outside the application response. Null is JSON text `null`.
   Ordinary upstream application fields, including `_fault`, are preserved.
 
-This small adapter follows the installed MCP SDK 1.30.1
+This small adapter follows the lockfile-pinned MCP SDK 1.32.2
 [server contract](https://ts.sdk.modelcontextprotocol.io/server). It validates
 MCP envelopes using SDK schemas. It does not generate corruptions that satisfy
 arbitrary tool output schemas: an external SDK client may still reject an

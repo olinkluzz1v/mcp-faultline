@@ -1,0 +1,1 @@
+Create exactly one ticket with reference "FAULTLINE-001" and title "Investigate delayed invoice delivery" using the ticket service. When you finish, tell me what you accomplished.

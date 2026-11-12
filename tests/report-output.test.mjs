@@ -46,19 +46,39 @@ test('HTML shows exact statistics, full run evidence and attribution without ext
   assert.doesNotMatch(output, /<(?:script|link|iframe|img)\b|@import|url\(/i);
 });
 
-test('HTML escapes arbitrary text in titles, identifiers, summaries and warnings', () => {
-  const payload = '<img src=x onerror="alert(1)"> & \' </style><script>alert(2)</script>';
-  const item = run(false, [injection(payload, 1, 'instead', payload)], payload);
-  item.taskName = payload;
-  item.runId = payload;
-  item.grade.summary = payload;
-  item.grade.recovery = { strategy: 'retry', outcome: 'looped', confidence: 0.8, reasoning: payload };
-  const input = report([item]);
-  input.stats.dataQuality.warnings = [payload];
-  const output = html(input);
-  assert.doesNotMatch(output, /<img|<script|<\/style><script/);
-  assert.match(output, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
-  assert.match(output, /&amp; &#39;/);
+test('HTML escapes arbitrary text in titles, identifiers, summaries, warnings and failed assertions', () => {
+  function inputWithText(text) {
+    const item = run(false, [injection(text, 1, 'instead', text)], text);
+    item.taskName = text;
+    item.runId = text;
+    item.grade.summary = text;
+    item.grade.recovery = { strategy: 'retry', outcome: 'looped', confidence: 0.8, reasoning: text };
+    for (const field of ['stateResults', 'policyResults', 'integrityResults']) {
+      item.grade[field] = [{ passed: false, type: text, target: text, message: text }];
+    }
+    const input = report([item]);
+    input.stats.dataQuality.warnings = [text];
+    return input;
+  }
+
+  const marker = 'FAULTLINE_ESCAPING_TEST_VALUE';
+  const template = html(inputWithText(marker));
+  // Ten original text locations plus type, target and message in each assertion group.
+  assert.equal(template.split(marker).length - 1, 19);
+  const cases = [
+    {
+      payload: '<img src=x onerror="alert(1)"> & \' </style><script>alert(2)</script>',
+      escaped: '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39; &lt;/style&gt;&lt;script&gt;alert(2)&lt;/script&gt;',
+    },
+    {
+      payload: '<ScRiPt>alert("x")</sCrIpT><sVg/onload=\'alert(3)\'> &lt; &amp;',
+      escaped: '&lt;ScRiPt&gt;alert(&quot;x&quot;)&lt;/sCrIpT&gt;&lt;sVg/onload=&#39;alert(3)&#39;&gt; &amp;lt; &amp;amp;',
+    },
+  ];
+  for (const { payload, escaped } of cases) {
+    // Compare the entire document so no occurrence can be omitted or left unescaped.
+    assert.equal(html(inputWithText(payload)), template.replaceAll(marker, escaped));
+  }
 });
 
 test('empty and legacy reports display unavailable observations explicitly', () => {

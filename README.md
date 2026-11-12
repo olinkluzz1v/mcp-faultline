@@ -99,6 +99,28 @@ This demo does not verify a real LLM integration or establish exactly-once behav
 for arbitrary external services. The evidence concerns this controlled local file
 executor and these two scripted policies.
 
+### Opt-in Codex CLI ticket example
+
+With a separately authenticated Codex CLI and access to the chosen model:
+
+```bash
+node examples/codex-ticket/run.mjs --model gpt-6.1-sol --out reports/codex-ticket-01
+```
+
+This example connects Codex to a disposable ticket service through the production
+proxy. The first ticket is created before its acknowledgement becomes a synthetic
+MCP timeout error. Independent service state determines PASS/FAIL; captures, agent
+events, configuration and the final answer are retained. Each rerun requires a
+fresh output directory. `--scenario baseline` runs the same task without a fault.
+Exit codes are `0` for a valid PASS, `1` for a valid FAIL, and `2` for invalid or
+incomplete evidence, infrastructure errors or interruptions.
+
+**Local live validation:** one baseline and three lost-ack runs with Codex CLI
+0.167.2 and requested model gpt-6.1-sol were valid PASS on commit `552af50`.
+Historical INVALID attempts and the limits of these four observations are retained
+in the [example guide](examples/codex-ticket/README.md). Normal CI uses scripted
+controls and needs no model credentials.
+
 ### Run the suite and convert reports
 
 ```bash
@@ -314,7 +336,7 @@ Honest list. These are the things that are not done yet.
 
 - **Mode A only.** We grade what the agent attempted, not what the consequences were. Mode B is future work.
 - **File-based side effects only.** Network calls, emails, git commits are not tracked.
-- **Protocol integration, not real-agent validation.** The fork tests an SDK client through the stdio proxy to a local fixture. This does not establish a versioned real-agent/model workflow or live-model compatibility.
+- **Live validation is scoped.** One local baseline and three fault runs passed for the [Codex ticket example](examples/codex-ticket/README.md). They do not establish general model resilience, compatibility with other versions/models, or remote exactly-once guarantees. CI uses scripted controls.
 - **No LLM judge.** Everything is deterministic. No model in the grading loop.
 - **Fault statistics are observational.** Mixed-fault runs contribute to multiple groups; the report does not identify which fault caused a failure. Older runs without injection metadata are marked as unknown.
 - **Execution is not proof of a side effect.** Embedded records distinguish an invoked executor (`executed`) from successful completion (`executionSucceeded`). Failed I/O may leave partial effects; replay cannot reconstruct those. Proxy records distinguish forwarding from observed responses; remote execution remains unknown without independent state. A synthetic timeout response does not prove a real transport timeout. See [proxy evidence](docs/proxy.md#remote-observations).
@@ -337,6 +359,7 @@ npm run test:agent              # structured tool results, execution evidence an
 npm run test:report             # fault statistics, provenance, output and CLI
 npm run test:demo               # local recovery demo, evidence and CLI exit behavior
 npm run test:run                # batch exit codes, validation and interruption
+npm run test:codex-ticket       # offline scripted ticket controls; no Codex/model needed
 npm test                        # smoke, agent, reporting, demo and run checks (build first)
 ```
 

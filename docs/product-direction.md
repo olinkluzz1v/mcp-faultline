@@ -18,8 +18,12 @@ The first example should be easy to explain: a ticket is created, its response
 is lost, and the agent retries. Did it create a duplicate, verify the first
 operation, or stop with an accurate explanation? Check independent test-service
 state against explicit expectations, rather than trusting the agent's claim.
-A ticket fixture is a proposed extension; current side-effect checks are
-file-based.
+The [ticket fixture example](../examples/codex-ticket/README.md) now implements
+this bounded oracle using independent local service state. One live baseline and
+three fresh lost-ack runs passed under the documented configuration; see the
+[validation summary](../examples/codex-ticket/README.md#offline-validation-and-references)
+for the tested commit, exact versions and retained historical INVALID attempts.
+The existing filesystem demo remains fully scripted.
 
 ## Shipped foundation
 
@@ -48,11 +52,22 @@ The current fork provides:
   original and produced responses, and termination outcome. EOF, signals and
   upstream loss share cleanup/finalization; capture-output errors stay nonzero.
   Captures are protocol evidence, without external-agent grading or replay.
-  A versioned, reproducible real-agent and model workflow still needs the
-  end-to-end evidence specified below.
+  The separate ticket example supplies bounded live end-to-end evidence; broader
+  external-agent reporting and regression workflows remain release goals.
+- An opt-in [Codex CLI ticket example](../examples/codex-ticket/README.md) with a
+  normal task, baseline and after-timeout YAML scenario, fresh sessions/state,
+  invocation-scoped tool restrictions, and separate fixture-state verdicts.
+  Captures, agent events, inputs/configuration and an independent creation ledger
+  are retained. Offline controls check duplicate failures and verification before
+  retry. The initial cloud model attempt failed authentication; subsequent local
+  validation completed one baseline and three lost-ack runs, all valid PASS on
+  `552af50aeac8dbed6e938b24299e6967beb5e0d5`. The requested model was
+  `gpt-6.1-sol`; `modelReported` remains null. See the linked example summary for
+  exact runtime versions and limits. This is bounded integration evidence, not
+  a completed broader release claim.
 
-These pieces support the intended workflow; the real-agent integration and fresh
-external-agent regression experience below are still release goals. The local
+These pieces include a locally validated Codex ticket integration; broader
+external-agent coverage and the fresh regression experience below remain release goals. The local
 demo and embedded CI check do not validate a real LLM integration, and file-based
 checks do not establish the outcomes of arbitrary external services.
 
@@ -80,18 +95,19 @@ specific workflow is enough; matching every competitor feature is not a goal.
 
 ## Remaining goals for the first focused release
 
-1. One documented integration tested end to end with a real agent and model,
-   with exact versions, configuration, and evidence. A proxy connection or
-   scripted fixture alone does not establish that integration.
+1. Extend validation beyond the completed one-baseline/three-lost-ack Codex
+   ticket exercise. Other agent/model/CLI versions and broader fault scenarios
+   still need their own fresh evidence; the four passing cases do not establish
+   general compatibility or a reliability rate.
 2. Extend the shipped lost-acknowledgement demo with equally guided transient-timeout
    and incomplete-data scenarios. Each specifies acceptable outcomes, verifies
    independent state where applicable, and has a known bad control.
 3. Carry the existing reports and tested CLI/CI exit behavior into the supported
    external-agent workflow, with fresh evidence for that integration.
-4. Provide a documented path from a retained scenario to a fresh run against a
-   changed external agent in isolated test state. Existing YAML scenarios can
-   already be versioned. Reading a saved report or replaying old responses is
-   not evidence that a new agent version has fixed the problem.
+4. Validate the ticket example's fresh prompt/model rerun path with actual model
+   access. Existing YAML scenarios can already be versioned. Reading a saved
+   report or replaying old responses is not evidence that a new agent version
+   has fixed the problem.
 
 Use local disposable fixtures for the demonstration. Fault schedules and checks
 can be repeatable while model behavior varies: retain relevant configuration,
