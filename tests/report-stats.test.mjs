@@ -75,10 +75,12 @@ test('runner excludes untriggered plans and policy denials', async () => {
   assert.deepEqual(denied.injectedFaults, []);
 });
 
-test('after-mode records one injection after real execution despite duplicate error records', async () => {
+test('after-mode records exactly one call and one injection after real execution', async () => {
   const task = await loadTask('tasks/integrity-only/idempotency-test-001.yaml');
   const result = await runTask(task, callOnce('write_file', { path: 'output.txt', content: 'hello idempotency' }));
   assert.deepEqual(result.injectedFaults, [injection('timeout', 1, 'after', 'write_file')]);
+  assert.equal(result.trajectory.calls.length, 1);
+  assert.deepEqual(result.trajectory.calls.map(c => c.index), [0]);
   assert.equal(result.trajectory.calls.filter(c => c.executed).length, 1);
   assert.equal(computeStats([result]).byFault.timeout.injections, 1);
 });

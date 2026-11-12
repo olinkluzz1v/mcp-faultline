@@ -1,5 +1,8 @@
 // src/agent/embedded.ts
 
+import type { ToolCallResult } from '../mcp/types.js';
+import { ToolResultError } from './tool-result.js';
+
 import type {
     AgentAdapter,
     AgentContext,
@@ -21,7 +24,9 @@ import type {
   export interface AgentHistoryEntry {
     toolName: string;
     args: unknown;
-    result: { status: string; data?: unknown; message?: string };
+    // Keep the original optional data/message access available to consumers;
+    // status narrowing also exposes the complete structured result fields.
+    result: ToolCallResult & { data?: unknown; message?: string };
   }
   
   export type AgentStepResult =
@@ -95,7 +100,7 @@ import type {
           history.push({
             toolName,
             args,
-            result: {
+            result: error instanceof ToolResultError ? { ...error.result } : {
               status: 'error',
               message: error instanceof Error ? error.message : String(error),
             },

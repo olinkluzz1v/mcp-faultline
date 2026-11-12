@@ -22,6 +22,7 @@ export function buildToolCallRecord(params: {
   startedAt: number;
   endedAt: number;
   executed: boolean;
+  executionSucceeded?: boolean;
 }): ToolCallRecord {
   return {
     index: params.index,
@@ -31,7 +32,13 @@ export function buildToolCallRecord(params: {
     startedAt: params.startedAt,
     durationMs: params.endedAt - params.startedAt,
     executed: params.executed,
+    ...(params.executionSucceeded === undefined ? {} : { executionSucceeded: params.executionSucceeded }),
   };
+}
+
+/** Legacy records used executed alone as evidence of completed execution. */
+export function didExecutionSucceed(call: ToolCallRecord): boolean {
+  return call.executed && (call.executionSucceeded ?? true);
 }
 
 /**

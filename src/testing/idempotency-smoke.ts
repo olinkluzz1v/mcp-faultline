@@ -72,7 +72,7 @@ async function naiveStep(state: AgentStepState): Promise<AgentStepResult> {
 
   const prev = history[stepIndex - 1];
 
-  if (prev?.result.status === 'error' && stepIndex < 3) {
+  if ((prev?.result.status === 'error' || prev?.result.status === 'timeout') && stepIndex < 3) {
     // Retry — the agent does NOT verify whether the first write
     // already reached the server.
     return {

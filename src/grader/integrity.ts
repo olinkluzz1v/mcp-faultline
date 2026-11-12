@@ -17,18 +17,18 @@
  *   - file_written_exactly_once  : file must change, exactly once
  *
  * Write counting uses TWO sources:
- *   1. Trajectory — count `write_file` calls with `executed: true`
+ *   1. Trajectory — count completed real `write_file` executions
  *   2. Snapshot delta — did the file's hash change?
  *
- * `executed: true` covers both normal writes AND `mode: 'after'`
- * faults (where the tool ran but the agent saw an error). It excludes
- * `mode: 'instead'` faults and policy denials, because those never
- * touched the file.
+ * `executionSucceeded: true` covers normal writes AND `mode: 'after'`
+ * replacements, regardless of the agent-visible status. Failed execution
+ * attempts, `instead` faults, and policy denials are not confirmed writes.
+ * Legacy records fall back to their historical `executed` evidence.
  *
  * Trajectory is the primary source (it knows HOW MANY times).
  * Snapshot is the secondary source (it knows WHETHER the file changed).
- * When the two disagree, that indicates a bug in the tool executor,
- * not agent misbehavior — so the assertion fails with a clear message.
+ * A conflicting snapshot is reported explicitly. A failed write may have
+ * partial effects; these records do not provide a complete side-effect ledger.
  */
 
 import type { IntegrityAssertion } from '../task/schema.js';
@@ -36,6 +36,7 @@ import type { Trajectory } from '../mcp/types.js';
 import type { AssertionResult } from './types.js';
 import type { Snapshot } from '../sandbox/snapshot.js';
 import { didFileChange } from '../sandbox/snapshot.js';
+import { didExecutionSucceed } from '../mcp/recorder.js';
 import { assertNever } from '../utils/assert-never.js';
 
 // ---------------------------------------------------------------------------
@@ -194,14 +195,14 @@ function checkFileWrittenExactlyOnce(
  *
  * A write "counts" when:
  *   - it targets the given path via `write_file`
- *   - `executed === true` — the real tool ran
+ *   - the real executor completed successfully (legacy: `executed === true`)
  *
  * This correctly handles `mode: 'after'` faults: the tool ran
  * (side-effect happened) even though the agent saw an error.
  * A naive `status === 'success'` check would miss these.
  *
- * Policy violations and `mode: 'instead'` faults are NOT counted
- * because the tool never ran.
+ * Failed executions are not counted as confirmed writes. Policy violations
+ * and `mode: 'instead'` faults are excluded because the tool never ran.
  */
 function countSuccessfulWrites(trajectory: Trajectory, target: string): number {
   const normalized = normalizePath(target);
@@ -209,7 +210,7 @@ function countSuccessfulWrites(trajectory: Trajectory, target: string): number {
 
   for (const call of trajectory.calls) {
     if (call.toolName !== 'write_file') continue;
-    if (!call.executed) continue;
+    if (!didExecutionSucceed(call)) continue;
 
     const args = call.args as { path?: unknown } | undefined;
     const rawPath = args?.path;
