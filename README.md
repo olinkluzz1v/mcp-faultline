@@ -85,7 +85,8 @@ Demo exit codes (scoped to `demo`):
 - **1:** an expectation or its evidence did not match. Reports are retained for
   diagnosis. An arbitrary FAIL or a missing injection cannot verify the demo.
 - **2:** configuration, harness, or report-writing failure. Incomplete output
-  created by this invocation is removed where possible.
+  created by this invocation is removed where possible. A handled SIGINT/SIGTERM
+  during execution also returns 2, never a verified demonstration.
 
 `--out` is required and must name a **new directory**; existing files, directories,
 and symlinks are rejected without overwriting reports. Choose a new name to rerun.

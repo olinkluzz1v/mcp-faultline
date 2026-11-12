@@ -197,6 +197,86 @@ test('demo help succeeds and does not create output', async t => {
   assert.deepEqual(await readdir(cwd), []);
 });
 
+test('interrupting a run or report write cannot exit successfully or retain partial output', async t => {
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    for (const target of ['receipt.txt', 'report.html']) {
+      await t.test(`${signal} during ${target}`, async t => {
+        const { cwd, out } = await workspace(t);
+        const sandboxRoot = join(cwd, 'sandboxes');
+        await mkdir(sandboxRoot);
+        const preload = join(cwd, 'interrupt.mjs');
+        await writeFile(preload, `
+          import fs from 'node:fs/promises';
+          import { syncBuiltinESMExports } from 'node:module';
+          const writeFile = fs.writeFile;
+          fs.writeFile = async (path, ...args) => {
+            if (String(path).endsWith(${JSON.stringify(target)})) {
+              setImmediate(() => process.kill(process.pid, ${JSON.stringify(signal)}));
+              setInterval(() => {}, 1000);
+              await new Promise(() => {});
+            }
+            return writeFile(path, ...args);
+          };
+          syncBuiltinESMExports();
+        `);
+        const result = await invoke(cwd, ['--out', out], {
+          preload, env: { ...process.env, TMPDIR: sandboxRoot, TMP: sandboxRoot, TEMP: sandboxRoot },
+        });
+        assert.equal(result.code, 2, result.stderr);
+        assert.doesNotMatch(result.stdout, /Demo verified/);
+        await assert.rejects(access(out), { code: 'ENOENT' });
+        assert.deepEqual(await readdir(sandboxRoot), []);
+      });
+    }
+  }
+});
+
+test('delayed shared signal cleanup cannot replace a settled demo error with exit 0', async t => {
+  const { cwd, out } = await workspace(t);
+  const preload = join(cwd, 'delayed-shutdown.mjs');
+  const registryUrl = new URL('../dist/sandbox/cleanup.js', import.meta.url).href;
+  await writeFile(preload, `
+    import fs from 'node:fs/promises';
+    import { syncBuiltinESMExports } from 'node:module';
+    import { globalCleanupRegistry } from ${JSON.stringify(registryUrl)};
+    let releaseCleanup;
+    const errorReported = new Promise(resolve => { releaseCleanup = resolve; });
+    const cleanupAll = globalCleanupRegistry.cleanupAll.bind(globalCleanupRegistry);
+    globalCleanupRegistry.cleanupAll = async () => {
+      await cleanupAll();
+      await errorReported;
+    };
+    const stderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (chunk, ...args) => {
+      const result = stderrWrite(chunk, ...args);
+      if (String(chunk).includes('Demo report writing')) releaseCleanup();
+      return result;
+    };
+    const writeFile = fs.writeFile;
+    fs.writeFile = async (path, ...args) => {
+      if (String(path).endsWith('report.html')) {
+        const keepAlive = setInterval(() => {}, 1000);
+        try {
+          await new Promise(resolve => {
+            process.once('SIGTERM', resolve);
+            process.kill(process.pid, 'SIGTERM');
+          });
+        } finally {
+          clearInterval(keepAlive);
+        }
+        throw new Error('Controlled report failure after cancellation');
+      }
+      return writeFile(path, ...args);
+    };
+    syncBuiltinESMExports();
+  `);
+  const result = await invoke(cwd, ['--out', out], { preload });
+  assert.equal(result.code, 2, result.stderr);
+  assert.match(result.stderr, /Controlled report failure after cancellation/);
+  assert.doesNotMatch(result.stdout, /Demo verified/);
+  await assert.rejects(access(out), { code: 'ENOENT' });
+});
+
 test('demo rejects existing output and preserves its reports', async t => {
   const { cwd, out } = await workspace(t);
   await mkdir(out);
