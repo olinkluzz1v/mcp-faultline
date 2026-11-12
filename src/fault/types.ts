@@ -53,5 +53,5 @@ export interface FaultInjector {
  */
 export type InjectionDecision =
   | { mode: 'none' }
-  | { mode: 'instead'; result: ToolCallResult }
-  | { mode: 'after'; result: ToolCallResult };
+  | { mode: 'instead'; result: ToolCallResult; faultType: FaultType }
+  | { mode: 'after'; result: ToolCallResult; faultType: FaultType };

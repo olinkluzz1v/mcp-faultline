@@ -62,6 +62,9 @@ jobs:
       - name: Idempotency smoke
         run: npm run test:idempotency-smoke
 
+      - name: Report statistics and output
+        run: npm run test:report
+
       - name: Embedded run (produce report)
         run: node dist/cli.js run
 
@@ -79,5 +82,6 @@ jobs:
           path: |
             reports/report.json
             reports/report.md
+            reports/report.html
           if-no-files-found: ignore
           retention-days: 7

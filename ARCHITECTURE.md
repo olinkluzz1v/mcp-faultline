@@ -34,7 +34,7 @@ There are six top-level layers. Each one is independent and has its own director
 | Agent | `src/agent/` | Agent interface, embedded implementation |
 | Fault | `src/fault/` | Fault definitions, registry, injector |
 | Grader | `src/grader/` | 5-layer grading |
-| Report | `src/report/` | Stats, JSON, Markdown output |
+| Report | `src/report/` | Stats, JSON, Markdown and standalone HTML output |
 | Proxy | `src/proxy/` | stdio proxy for external agents |
 | Replay | `src/replay/` | Re-run from recorded trajectory |
 | CLI | `src/cli/` | Command line entry points |
@@ -201,17 +201,18 @@ Some are self-imposed, some are environmental.
 
 ## Testing
 
-Three smoke tests plus the oracle matrix.
+Three smoke tests, reporting tests, and the oracle matrix.
 
 | Test | What it covers |
 |---|---|
 | `proxy-smoke` | Proxy spawns, forwards, injects faults, shuts down |
 | `integrity-smoke` | Integrity layer catches a double-write |
 | `idempotency-smoke` | `mode: after` produces a real double-write |
+| `test:report` | Observed fault statistics, runner provenance, escaped output and CLI artifacts |
 | `negative-controls` | 21-entry matrix: good agents pass, bad agents fail |
 | `replay` | Reproduces a previous run exactly |
 
-All five run in CI on Ubuntu with Node 20.
+All of these run in CI on Ubuntu with Node 20.
 
 ---
 

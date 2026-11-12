@@ -7,6 +7,7 @@
  * - computeStats — batch statistics with confidence intervals
  * - toJson / writeJson — JSON output
  * - toMarkdown / writeMarkdown — Markdown output
+ * - toHtml / writeHtml — standalone offline HTML output
  * - Types: RunResult, BatchReport, BatchStats
  */
 
@@ -14,3 +15,4 @@ export * from './types.js';
 export * from './stats.js';
 export * from './json.js';
 export * from './markdown.js';
+export * from './html.js';

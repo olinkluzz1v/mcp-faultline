@@ -1,6 +1,50 @@
 // src/report/stats.ts
 
-import type { RunResult, BatchStats } from './types.js';
+import type { RunResult, BatchStats, FaultBreakdown, FaultStats, RunOutcomeStats } from './types.js';
+
+/** Aggregate observed exposure, not configured plans or tool error statuses. */
+export function computeFaultStats(runs: RunResult[]): FaultBreakdown {
+  const groups = new Map<string, FaultStats>();
+  const withoutFault: RunOutcomeStats = { total: 0, passed: 0, failed: 0, rate: 0 };
+  let unknownFaultRuns = 0;
+
+  const countRun = (group: RunOutcomeStats, passed: boolean): void => {
+    group.total++;
+    if (passed) group.passed++;
+    else group.failed++;
+    group.rate = group.passed / group.total;
+  };
+
+  for (const run of runs) {
+    if (run.injectedFaults === undefined) {
+      unknownFaultRuns++;
+      continue;
+    }
+    if (run.injectedFaults.length === 0) {
+      countRun(withoutFault, run.grade.passed);
+      continue;
+    }
+    const seen = new Set<string>();
+    for (const { faultType } of run.injectedFaults) {
+      let group = groups.get(faultType);
+      if (!group) {
+        group = { injections: 0, total: 0, passed: 0, failed: 0, rate: 0 };
+        groups.set(faultType, group);
+      }
+      group.injections++;
+      if (!seen.has(faultType)) {
+        countRun(group, run.grade.passed);
+        seen.add(faultType);
+      }
+    }
+  }
+
+  return {
+    byFault: Object.fromEntries([...groups.entries()].sort(([a], [b]) => a.localeCompare(b))),
+    withoutFault,
+    unknownFaultRuns,
+  };
+}
 
 /**
  * Statistical analysis of a batch of runs.
@@ -10,6 +54,7 @@ import type { RunResult, BatchStats } from './types.js';
  * - Task-level: macro pass rate (unit = task, not run)
  * - Data quality: sample characteristics and honesty warnings
  * - Per-task breakdown
+ * - Per-fault breakdown from applied injection provenance
  * - Failure distribution
  *
  * Why two levels?
@@ -83,6 +128,7 @@ export function computeStats(runs: RunResult[]): BatchStats {
     failureDistribution,
     taskLevel,
     dataQuality,
+    ...computeFaultStats(runs),
   };
 }
 
@@ -219,6 +265,7 @@ function classifyFailure(run: RunResult): string {
 
 function emptyStats(): BatchStats {
   return {
+    ...computeFaultStats([]),
     total: 0,
     passed: 0,
     failed: 0,

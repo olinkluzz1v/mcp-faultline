@@ -2,6 +2,38 @@
 
 import type { GradeResult } from '../grader/types.js';
 import type { Trajectory } from '../mcp/types.js';
+import type { FaultType, InjectionMode } from '../fault/types.js';
+
+/** An injection actually applied, not just configured in a task plan. */
+export interface InjectedFault {
+  faultType: FaultType;
+  toolName: string;
+  /** 1-based call number for this tool. */
+  callNumber: number;
+  mode: InjectionMode;
+}
+
+export interface RunOutcomeStats {
+  total: number;
+  passed: number;
+  failed: number;
+  /** Passed / total; zero for an empty group. */
+  rate: number;
+}
+
+export interface FaultStats extends RunOutcomeStats {
+  /** Number of applied injections, including repeats in the same run. */
+  injections: number;
+}
+
+export interface FaultBreakdown {
+  /** Each run contributes once per observed type. Groups may overlap. */
+  byFault: Record<string, FaultStats>;
+  /** Runs with explicitly recorded zero injections (not necessarily successful). */
+  withoutFault: RunOutcomeStats;
+  /** Legacy/replay/custom runs without injection provenance; never inferred. */
+  unknownFaultRuns: number;
+}
 
 /**
  * Report types — structured output of a run or a batch of runs.
@@ -20,6 +52,8 @@ export interface RunResult {
   trajectory: Trajectory;
   /** Duration of the entire run in milliseconds */
   durationMs: number;
+  /** Empty = no injections; absent = unknown (older reports/custom producers). */
+  injectedFaults?: InjectedFault[];
 }
 
 /**
@@ -35,7 +69,7 @@ export interface RunResult {
  * Both views are reported side by side so the reader can see where
  * precision may be overstated.
  */
-export interface BatchStats {
+export interface BatchStats extends FaultBreakdown {
   // ─── Run-level (every execution is an observation) ───
 
   /** Total number of runs */

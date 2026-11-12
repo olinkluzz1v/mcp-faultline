@@ -7,6 +7,7 @@ import { runTasks } from './runner.js';
 import { computeStats } from '../report/stats.js';
 import { writeJson } from '../report/json.js';
 import { writeMarkdown } from '../report/markdown.js';
+import { writeHtml } from '../report/html.js';
 import type { BatchReport } from '../report/types.js';
 import type {
   AgentStepState,
@@ -43,6 +44,7 @@ export function createCli(): Command {
     .option('-o, --out <dir>', 'Output directory', 'reports')
     .option('--json', 'Write JSON report', true)
     .option('--md', 'Write Markdown report', true)
+    .option('--no-html', 'Skip the standalone HTML report')
     .action(async (opts) => {
       await runCommand({
         tasksDir: opts.tasks,
@@ -50,6 +52,7 @@ export function createCli(): Command {
         outDir: opts.out,
         writeJsonReport: opts.json,
         writeMarkdownReport: opts.md,
+        writeHtmlReport: opts.html,
       });
     });
 
@@ -129,6 +132,7 @@ interface RunCommandOptions {
   outDir: string;
   writeJsonReport: boolean;
   writeMarkdownReport: boolean;
+  writeHtmlReport: boolean;
 }
 
 /**
@@ -360,6 +364,12 @@ async function runCommand(opts: RunCommandOptions): Promise<void> {
     const mdPath = join(outDir, 'report.md');
     await writeMarkdown(report, mdPath);
     console.error(`Markdown report: ${mdPath}`);
+  }
+
+  if (opts.writeHtmlReport) {
+    const htmlPath = join(outDir, 'report.html');
+    await writeHtml(report, htmlPath);
+    console.error(`HTML report: ${htmlPath}`);
   }
 
   // Print summary to stderr

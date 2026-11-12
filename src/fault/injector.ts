@@ -1,7 +1,7 @@
 // src/fault/injector.ts
 
 import type { FaultInjection } from '../task/schema.js';
-import type { FaultInjector, InjectionDecision } from './types.js';
+import type { FaultInjector, InjectionDecision, FaultType } from './types.js';
 import { buildFaultResult, matchesFault } from './strategies.js';
 
 /**
@@ -45,7 +45,7 @@ export class PlanFaultInjector implements FaultInjector {
     for (const fault of this.plan) {
       if (matchesFault(fault, toolName, callNumber)) {
         const result = buildFaultResult(fault);
-        return { mode: fault.mode, result };
+        return { mode: fault.mode, result, faultType: fault.fault as FaultType };
       }
     }
 

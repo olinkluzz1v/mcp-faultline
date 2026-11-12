@@ -16,6 +16,8 @@
 
 Faultline injects controlled failures into an MCP agent's tool calls, records the trajectory, and grades whether the agent recovered. With evidence, not just pass/fail.
 
+**About this fork:** [olinkluzz1v/mcp-faultline](https://github.com/olinkluzz1v/mcp-faultline) extends the original [MCP-Faultline by Gigih Susetyo](https://github.com/gigihsusetyo/mcp-faultline). Our first additions are statistics by actually injected fault type and a standalone offline HTML report. The original MIT license and copyright are preserved. See [fork additions and report semantics](docs/reporting.md).
+
 **Status:** MVP. Working, tested, but early. Read [Limitations](#limitations) before trusting it for anything serious.
 
 ---
@@ -35,7 +37,7 @@ Two agents can both "pass" a task and behave completely differently under failur
 Requires Node.js >= 20.
 
 ```bash
-git clone https://github.com/gigihsusetyo/mcp-faultline.git
+git clone https://github.com/olinkluzz1v/mcp-faultline.git
 cd mcp-faultline
 npm ci
 npm run build
@@ -50,7 +52,9 @@ node dist/cli.js negative-controls
 node dist/cli.js replay reports/report.json
 ```
 
-The `run` command writes `reports/report.json` and `reports/report.md`.
+The `run` command writes `reports/report.json`, `reports/report.md`, and `reports/report.html`. Open the HTML file directly in a browser; it needs no server or internet connection. Use `--out <directory>` to choose the destination or `--no-html` to skip HTML generation.
+
+All three formats include results by injected fault type. A run counts once per type even if that fault is injected repeatedly; injection counts are shown separately. Runs with several types appear in several groups. [Read the counting rules and limitations](docs/reporting.md#counting-rules) before comparing percentages.
 
 ---
 
@@ -102,7 +106,7 @@ A sequence-based grader would see "two write calls, no error". A state-based gra
    +--------------+
           |
           v
-      Report (JSON / Markdown)
+      Report (JSON / Markdown / HTML)
 ```
 
 The agent can run embedded (in-process) or as an external process behind a stdio proxy. The proxy lets Faultline sit between a real agent like Cline and a real MCP server.
@@ -182,7 +186,7 @@ Honest list. These are the things that are not done yet.
 - **File-based side effects only.** Network calls, emails, git commits are not tracked.
 - **One external agent tested.** Cline. Claude Code, Cursor, etc. are untested.
 - **No LLM judge.** Everything is deterministic. No model in the grading loop.
-- **Fault-level statistics missing.** The report shows pass rates by task, not by fault type.
+- **Fault statistics are observational.** Mixed-fault runs contribute to multiple groups; the report does not identify which fault caused a failure. Older runs without injection metadata are marked as unknown.
 - **`EmbeddedAgent` loses status detail.** The history always records "error", not the specific status. Known bug.
 - **Replay is single-run.** No batch replay, no agent-vs-agent comparison yet.
 
@@ -197,6 +201,8 @@ npm run dev             # tsc --watch
 npm run test:proxy-smoke        # proxy intercepts and injects faults
 npm run test:integrity-smoke    # integrity layer catches double-writes
 npm run test:idempotency-smoke  # mode: after produces a real double-write
+npm run test:report             # fault statistics, provenance, output and CLI
+npm test                        # all smoke and reporting checks (build first)
 ```
 
 Full suite (build, run, oracle, replay):
@@ -241,3 +247,5 @@ MIT. See [LICENSE](./LICENSE).
 **Gigih Susetyo**
 
 Available as an agent skill on [Agensi.io](https://www.agensi.io/skills/mcp-faultline).
+
+Fork reporting additions are maintained in [olinkluzz1v/mcp-faultline](https://github.com/olinkluzz1v/mcp-faultline); they do not replace or imply authorship of the original project.

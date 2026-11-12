@@ -2,7 +2,7 @@
 
 import { writeFile } from 'node:fs/promises';
 import type { BatchReport } from './types.js';
-import { formatPercent, formatCI } from './stats.js';
+import { computeFaultStats, formatPercent, formatCI } from './stats.js';
 
 /**
  * Markdown report — human-readable output.
@@ -67,6 +67,28 @@ export function toMarkdown(report: BatchReport): string {
       lines.push('');
     }
   }
+
+  // ─── Observed fault types (legacy reports may lack provenance) ───
+  const faults = stats.byFault === undefined ? computeFaultStats(runs) : stats;
+  lines.push('## Results by Injected Fault Type');
+  lines.push('');
+  lines.push('Only applied injections count. A run counts once per type; repeated injections are counted separately. With multiple types, groups overlap and totals must not be summed. Whole-run outcomes do not establish which fault caused a failure.');
+  lines.push('');
+  if (Object.keys(faults.byFault).length > 0) {
+    lines.push('| Fault type | Injections | Runs | Passed | Failed | Pass rate |');
+    lines.push('|---|---|---|---|---|---|');
+    for (const [type, f] of Object.entries(faults.byFault)) {
+      lines.push(`| ${type.replace(/[|\r\n]/g, ' ')} | ${f.injections} | ${f.total} | ${f.passed} | ${f.failed} | ${formatPercent(f.rate)} |`);
+    }
+  } else {
+    lines.push('No recorded fault injections.');
+  }
+  lines.push('');
+  const baseline = faults.withoutFault;
+  lines.push(`Known runs without injections: ${baseline.total} (${baseline.passed} passed, ${baseline.failed} failed; ${baseline.total ? formatPercent(baseline.rate) : 'N/A'} pass rate).`);
+  lines.push('');
+  lines.push(`Unknown fault provenance: ${faults.unknownFaultRuns} run(s), excluded from the fault and no-injection groups.`);
+  lines.push('');
 
   // ─── Per-task breakdown ───
   lines.push('## Per-Task Breakdown');
