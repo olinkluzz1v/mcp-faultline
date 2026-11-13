@@ -12,13 +12,13 @@
 #   7. Reporting tests
 #   8. Guided local demo tests
 #   9. Run CLI exit codes and interruption tests
-#  10. Codex ticket example (offline scripted controls only)
+#  10. Codex ticket single-run and batch examples (offline scripted controls only)
 #  11. Embedded run (produce report)
 #  12. Negative controls (oracle validation)
 #  13. Replay (reproducibility)
 #
 # Pure Node — no Docker, no Homebrew, no external services.
-# The suite is deterministic and should finish in under two minutes.
+# Live models and authentication are never used by these checks.
 
 name: CI
 
@@ -87,6 +87,9 @@ jobs:
 
       - name: Codex ticket example (offline scripted controls)
         run: npm run test:codex-ticket
+
+      - name: Codex ticket batch (offline scripted controls)
+        run: npm run test:codex-ticket-batch
 
       - name: Embedded run (produce report)
         run: node dist/cli.js run

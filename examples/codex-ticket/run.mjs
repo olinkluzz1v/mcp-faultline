@@ -17,7 +17,7 @@ import { readEvidence, evaluateEvidence } from './evaluate.mjs';
 const execute = promisify(execFile);
 const writeJSON = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 const hash = value => createHash('sha256').update(value).digest('hex');
-function boundedInteger(value, name, min, max) {
+export function boundedInteger(value, name, min, max) {
   if (!/^\d+$/.test(String(value)) || !Number.isSafeInteger(Number(value)) || Number(value) < min || Number(value) > max) {
     throw new Error(`${name} must be an integer from ${min} through ${max}.`);
   }
@@ -25,6 +25,7 @@ function boundedInteger(value, name, min, max) {
 }
 
 export async function runExample(options) {
+  options.signal?.throwIfAborted();
   if (process.platform === 'win32') throw new Error('This example currently requires a POSIX host for process-group cleanup.');
   if (!options.model?.trim()) throw new Error('--model must be explicit and nonempty.');
   if (!options.out?.trim()) throw new Error('--out must name a fresh directory.');
@@ -89,8 +90,14 @@ export async function runExample(options) {
   }
   const onInt = () => stop('SIGINT');
   const onTerm = () => stop('SIGTERM');
+  // A batch owns signals between runs as well as during this invocation. Reuse
+  // this run's bounded cleanup, including cancellation during asynchronous setup.
+  const onAbort = () => stop(String(options.signal.reason ?? 'aborted'));
   process.on('SIGINT', onInt); process.on('SIGTERM', onTerm);
+  options.signal?.addEventListener('abort', onAbort, { once: true });
+  if (options.signal?.aborted) onAbort();
   try {
+    if (session.interruption) throw new Error(session.interruption);
     workspace = await mkdtemp(join(tmpdir(), 'faultline-codex-workspace-'));
     manifest.workspace = workspace;
     const stateDirectory = join(output, 'state');
@@ -177,6 +184,7 @@ export async function runExample(options) {
     clearTimeout(killTimer);
     if (workspace) await rm(workspace, { recursive: true, force: true }).catch(error => { session.error ??= error.message; });
     process.off('SIGINT', onInt); process.off('SIGTERM', onTerm);
+    options.signal?.removeEventListener('abort', onAbort);
   }
   manifest.endedAt = Date.now();
   const evaluation = evaluateEvidence(manifest, evidence, session);

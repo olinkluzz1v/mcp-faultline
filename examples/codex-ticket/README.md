@@ -10,7 +10,9 @@ sequential lost-ack runs were valid PASS on
 `552af50aeac8dbed6e938b24299e6967beb5e0d5`, with the original prompt and
 `modelRequested: gpt-6.1-sol`. The CLI supplies no reported model identifier;
 `modelReported` remains null. These four observations establish this integration's
-observed behavior, not a general reliability rate. PR #10 remains open for review.
+observed behavior, not a general reliability rate. [PR #10](https://github.com/olinkluzz1v/mcp-faultline/pull/10)
+was merged; these historical observations used the single-run launcher, not the
+batch workflow below.
 
 ## Prerequisites and first run
 
@@ -80,6 +82,75 @@ Use `--timeout-ms` (100–600000) and `--max-tool-calls` (1–32) to change them
 excess request is recorded, rejected, and closes the fixture; an exceeded limit is
 INVALID even if a ticket already exists. Each MCP request also has a ten-second
 client timeout. Shutdown has a separate bounded cleanup allowance.
+
+## Batch regression workflow
+
+After the install/build and CLI authentication prerequisites above, run:
+
+```sh
+node examples/codex-ticket/batch.mjs --model gpt-6.1-sol --fault-runs 3 --out reports/codex-ticket-batch-01
+```
+
+The output directory must be new. `--model` and `--out` are required;
+`--fault-runs` accepts integers **1–20**, default **3**, in addition to exactly one
+baseline. The plan is captured before execution. Runs execute sequentially with
+fresh threads, workspaces, fixture state, identities and evidence directories.
+The batch never retries or replaces a failed evaluation.
+
+`--prompt`, `--codex`, `--timeout-ms` and `--max-tool-calls` have the same meanings
+and limits as the single-run launcher. One prompt is read and frozen before any
+run; its SHA-256 is recorded and checked against every retained input. The batch
+checks actual CLI arguments, scenario hashes, model settings and runtime versions
+for drift. Reported model identifiers stay `null` when unavailable. It does not
+copy login files, modify global CLI configuration or change the evaluator.
+
+| Exit | Batch meaning |
+| --- | --- |
+| `0` | Every planned evaluation is valid PASS and both aggregate reports were written. |
+| `1` | Every planned evaluation completed validly; at least one is FAIL. |
+| `2` | INVALID/incomplete evidence, configuration drift, interruption, infrastructure/output failure, or unstarted evaluations. Takes precedence over `1`. |
+
+A valid FAIL **continues** the predetermined plan, including a failed baseline.
+INVALID or infrastructure failure **stops** scheduling; remaining entries are
+**NOT RUN**, not failed evaluations. SIGINT/SIGTERM also stop scheduling, invoke
+the active run's bounded cleanup, preserve available evidence and return `2`.
+Interruption between runs cannot start the next run. No resume/retry facility is
+provided; a later batch needs a fresh output path and retains the old results.
+
+| Output | Contents |
+| --- | --- |
+| `batch.json` | `kind: codex-ticket-batch`, `schemaVersion: 1`; predetermined plan, aggregate outcome, per-run status/reasons, validated counts and configuration provenance. |
+| `report.html` | Standalone offline overview, with the baseline prominently separated and relative links to retained evidence. No scripts or external assets. |
+| `prompt.txt` | Exact frozen batch prompt. |
+| `runs/00-baseline/` | Unchanged single-run summary, inputs and evidence for the no-fault baseline. |
+| `runs/01-lost-ack/`, etc. | Separate unchanged evidence for each attempted fault run. Unstarted entries have no run directory. |
+
+`completed` counts valid PASS/FAIL evaluations; `invalid` counts invalid attempts,
+and `unstarted` counts NOT RUN entries. During execution, `RUNNING` and a null
+exit code indicate an unfinished aggregate. Null counts mean unknown: counts are
+published only after the existing oracle and batch provenance checks validate the
+evidence. An aggregate INVALID does not rewrite an individual run's retained
+grade. Its artifacts remain available for diagnosis.
+
+The HTML renders on its own; keep it beside `batch.json`, `prompt.txt` and `runs/`
+for evidence links to work. HTML is an outcome snapshot, not proof that report
+finalization succeeded. `batch.json` is the authoritative completion record and is
+published last, after HTML. If final JSON writing fails, HTML can show passing
+evaluations while JSON remains RUNNING and the command returns `2`. Failure
+diagnostics are written to each aggregate independently where possible.
+Interrupted writes or machine failure may leave only an earlier snapshot or
+partial files; an incomplete plan is never proof of PASS.
+Output failures return `2` even when the final error cannot itself be written.
+Existing batches and single-run reports are not deleted as cleanup.
+
+**Validation scope:** batch integration tests use scripted Codex controls through
+the real production proxy and independent ticket fixture. Live execution of this
+batch command is pending; the historical live results below do not validate this
+new orchestration. A failed baseline weakens the no-fault reference. None of these
+observations establishes fault causation or a general reliability percentage.
+This increment supports one Codex integration, ticket scenario and explicit model
+with one prompt per batch. Other integrations and automated batch comparisons
+remain future work; arbitrary remote-service state is not verified.
 
 ## Outcome and evidence
 
@@ -167,6 +238,7 @@ embedded grader/replay.
 ```sh
 npm run build
 npm run test:codex-ticket
+npm run test:codex-ticket-batch
 ```
 
 Scripted controls exercise the real production proxy and fixture: duplicate
@@ -174,6 +246,12 @@ creation fails for the duplicate count; verification before retry passes; both
 pass without faults. Tests cover invalid evidence, startup/auth failures,
 non-MCP activity, fresh state/output protection, interruptions, output failures
 and Codex-style process-group shutdown. They are not real-agent tests.
+
+Batch controls additionally check sequential continuation after valid FAIL,
+INVALID/NOT RUN stopping, missing/inconsistent results, frozen prompts, identity
+and version drift, aggregate write failures, signals during/between runs and final
+reporting, preserved evidence, and escaped offline HTML. No live model is launched
+by either test command.
 
 Validated environment: Codex CLI `0.167.2`, Node.js `24.22.3`, npm `12.2.2`,
 MCP SDK `1.32.2`, Zod `4.6.7`, with ChatGPT subscription login and no API keys.
@@ -222,8 +300,9 @@ Historical attempts remain INVALID and are not regraded:
   creation, but the standard under-development notice was emitted as an error
   item. Only allowed_agent_activity failed; the session itself exited 0.
 
-No live outcomes were retried. Maintainer review remains necessary before merge;
-these local fixture results do not guarantee remote exactly-once behavior.
+No live outcomes were retried. PR #10 has since merged; these historical local
+fixture results do not guarantee remote exactly-once behavior or validate the
+new batch orchestration.
 
 Official references checked 2026-11-12:
 [CLI](https://developers.openai.com/codex/cli/reference/),

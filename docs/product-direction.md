@@ -56,8 +56,8 @@ The current fork provides:
   original and produced responses, and termination outcome. EOF, signals and
   upstream loss share cleanup/finalization; capture-output errors stay nonzero.
   Captures are protocol evidence, without external-agent grading or replay.
-  The separate ticket example supplies bounded live end-to-end evidence; broader
-  external-agent reporting and regression workflows remain release goals.
+  The separate ticket example supplies bounded live end-to-end evidence and its
+  own batch workflow; broader external-agent coverage remains a release goal.
 - An opt-in [Codex CLI ticket example](../examples/codex-ticket/README.md) with a
   normal task, baseline and after-timeout YAML scenario, fresh sessions/state,
   invocation-scoped tool restrictions, and separate fixture-state verdicts.
@@ -69,11 +69,38 @@ The current fork provides:
   `gpt-6.1-sol`; `modelReported` remains null. See the linked example summary for
   exact runtime versions and limits. This is bounded integration evidence, not
   a completed broader release claim.
+- A [Codex ticket batch command](../examples/codex-ticket/README.md#batch-regression-workflow)
+  records a predetermined no-fault baseline and sequential fresh lost-ack runs,
+  with one explicit model and frozen prompt. Valid FAILs continue; INVALID,
+  infrastructure failure or interruption stops scheduling and marks unstarted
+  entries NOT RUN. Versioned JSON and offline HTML retain actual outcomes,
+  independent fixture evidence and configuration provenance. Offline scripted
+  integration tests cover this orchestration; live batch validation is pending.
 
 These pieces include a locally validated Codex ticket integration; broader
-external-agent coverage and the fresh regression experience below remain release goals. The local
+external-agent coverage and live validation of the new batch workflow remain goals. The local
 demo and embedded CI check do not validate a real LLM integration, and file-based
 checks do not establish the outcomes of arbitrary external services.
+
+## Architecture direction: CLI, desktop and integrations
+
+The long-term product includes a local desktop application and an architecture
+that can support different agents, models and providers. Validate the CLI
+workflow first. CLI and desktop should share the same execution, verification
+and reporting core so their evidence and outcome contracts remain consistent.
+
+Provider-specific launching, authentication integration, event handling and
+lifecycle behavior belong at the integration boundary. Support for a second
+independent agent/provider should validate that boundary before we claim broad
+compatibility. Document and test compatibility per integration **and transport**;
+there is no universal-support claim.
+
+Desktop support also requires addressing platform-specific process lifecycle and
+cleanup limitations, including the current POSIX-only Codex launcher. A desktop
+window alone does not resolve those constraints. The current batch increment
+implements no desktop UI, additional provider or transport, or speculative
+adapter framework. Those decisions follow evidence from the validated CLI and
+second integration.
 
 ## Reference projects
 
@@ -106,12 +133,16 @@ specific workflow is enough; matching every competitor feature is not a goal.
 2. Extend the shipped lost-acknowledgement and transient-timeout demos with an
    equally guided incomplete-data scenario. Specify acceptable outcomes, verify
    independent state where applicable, and include a known bad control.
-3. Carry the existing reports and tested CLI/CI exit behavior into the supported
-   external-agent workflow, with fresh evidence for that integration.
+3. Live-validate the shipped Codex ticket batch command and its JSON/HTML and exit
+   contracts. Broader integrations and automated comparisons between batches
+   remain later work.
 4. Validate the ticket example's fresh prompt/model rerun path with actual model
-   access. Existing YAML scenarios can already be versioned. Reading a saved
+   access, then test a second independent integration before generalizing the
+   architecture. Existing YAML scenarios can already be versioned. Reading a saved
    report or replaying old responses is not evidence that a new agent version
    has fixed the problem.
+5. Build a local desktop workflow on the validated shared core, with explicit
+   platform and transport support backed by lifecycle/cleanup tests.
 
 Use local disposable fixtures for the demonstration. Fault schedules and checks
 can be repeatable while model behavior varies: retain relevant configuration,

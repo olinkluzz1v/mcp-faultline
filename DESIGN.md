@@ -13,9 +13,12 @@ Exact totals and denominators take priority over charts. PASS/FAIL have text
 labels as well as distinct colors. Warnings and overlap caveats stay beside
 the results they qualify. Missing observations show N/A, never a fabricated rate.
 
-`src/report/html.ts` owns inline CSS and its `:root` tokens: paper, surface,
-ink, muted, line, accent, pass and fail. It also owns the single report layout;
-there is no application framework, component library or second stylesheet.
+`src/report/presentation.ts` owns shared text escaping, inline CSS and its `:root`
+tokens: paper, surface, ink, muted, line, accent, pass and fail. The embedded layout
+remains in `src/report/html.ts`; the Codex ticket batch reuses these primitives
+with its own small overview and evidence links. Its separate oracle and JSON
+contract are not embedded evaluation statistics. There is no application framework
+or component library.
 
 Reading order: header and section links → overall summary → fault comparison →
 task comparison and sampling caveats → native run disclosures → provenance.
