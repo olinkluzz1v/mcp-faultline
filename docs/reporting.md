@@ -34,6 +34,25 @@ sample limitations and expandable run details. Percentages always appear with
 their sample counts. Narrow screens can scroll each table horizontally; all
 essential information is available without hovering or enabling JavaScript.
 
+## Demo context in HTML
+
+The `demo` command adds a visible section before the overall results, identifying
+the scripted local filesystem scenario and policy, expected grade, actual grade,
+and that policy's **VERIFIED / NOT VERIFIED** evidence result. This status comes
+from the existing demo verifier, including its injection, execution and file
+assertion checks; matching grades alone do not establish verification. Mismatch
+reasons are shown in the section without opening run details.
+
+Negative controls explain the duplicate write (lost acknowledgement) or missing
+file (transient timeout). Verification confirms the expected demonstration, not
+successful task completion: an actual FAIL stays FAIL throughout the report.
+These are scripted policies, not evidence of real model behavior.
+
+Demo context is an optional HTML-rendering argument, not part of `BatchReport`.
+JSON, Markdown, grades and statistics are unchanged. Ordinary reports have no
+demo section. In particular, `report saved-report.json --out report.html` does
+not infer a policy or verification status from task names or saved metadata.
+
 ## Convert a saved report
 
 ```bash
@@ -127,6 +146,11 @@ await writeHtml(report, 'reports/report.html');
 
 Like `writeJson` and `writeMarkdown`, `writeHtml` expects the parent directory to
 exist and propagates filesystem errors. The CLI creates the output directory.
+
+`toHtml(report, demoContext)` and `writeHtml(report, path, demoContext)` accept an
+optional `DemoHtmlContext` for exactly one run. The caller supplies the existing
+verifier result; the renderer reads the actual grade from the run and escapes
+context text. It does not run verification or regrade the report.
 
 JSON gains additive fields. Old reports still work with replay; HTML/Markdown
 renderers derive the fault breakdown from run metadata when stored statistics

@@ -83,6 +83,7 @@ export async function runDemoCommand(opts: { out: string; scenario?: DemoScenari
       const evidence = policy.id === 'stop-on-timeout' || policy.id === 'retry-once'
         ? verifyTransientTimeoutRun(run, policy.id) : verifyDemoRun(run, policy.id);
       matched &&= evidence.matched;
+      const expectedPass = policy.id === 'verify-before-retry' || policy.id === 'retry-once';
       const report: BatchReport = {
         meta: { generatedAt: Date.now(), durationMs: run.durationMs, taskCount: 1, runsPerTask: 1 },
         stats: computeStats([run]),
@@ -94,9 +95,18 @@ export async function runDemoCommand(opts: { out: string; scenario?: DemoScenari
       const paths = ['report.json', 'report.md', 'report.html'].map(name => join(directory, name));
       await writeJson(report, paths[0]);
       await writeMarkdown(report, paths[1]);
-      await writeHtml(report, paths[2]);
+      await writeHtml(report, paths[2], {
+        scenario: transient ? 'Transient timeout' : 'Lost acknowledgement',
+        policy: policy.label,
+        expectedPassed: expectedPass,
+        verification: evidence,
+        negativeControl: policy.id === 'naive'
+          ? 'Retrying after a lost acknowledgement should complete two writes. The duplicate write must fail file_written_exactly_once.'
+          : policy.id === 'stop-on-timeout'
+            ? 'Stopping after the prevented write should leave receipt.txt missing, with zero completed writes. The missing file must fail the required task.'
+            : undefined,
+      });
       checkInterrupted();
-      const expectedPass = policy.id === 'verify-before-retry' || policy.id === 'retry-once';
       const expectedWrites = policy.id === 'naive' ? 2 : policy.id === 'stop-on-timeout' ? 0 : 1;
       summaries.push([
         `\n${policy.label}`,
