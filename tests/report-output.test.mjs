@@ -94,6 +94,45 @@ test('empty and legacy reports display unavailable observations explicitly', () 
   assert.match(reporting.toMarkdown(old), /Unknown fault provenance: 1/);
 });
 
+test('demo context is optional and never inferred from task names or saved metadata', () => {
+  for (const runs of [[], [legacyRun()], [run(false, [], 'demo-lost-acknowledgement')]]) {
+    const input = report(runs);
+    input.meta.demo = { scenario: 'lost-acknowledgement', verified: true };
+    const output = html(input);
+    assert.doesNotMatch(output, /id="demo-context"|Evidence verification:|Scripted local filesystem demo/);
+  }
+});
+
+test('demo context escapes every text field and preserves the report and its actual grade', () => {
+  const input = report([run(false)]);
+  const original = structuredClone(input);
+  function context(text) {
+    return {
+      scenario: text, policy: text, expectedPassed: true, negativeControl: text,
+      verification: { matched: false, problems: [text] },
+    };
+  }
+  const marker = 'DEMO_CONTEXT_ESCAPING_VALUE';
+  const template = reporting.toHtml(input, context(marker));
+  assert.equal(template.split(marker).length - 1, 4);
+  const payload = '<ScRiPt>alert("x")</sCrIpT> & \' </style>';
+  const escaped = '&lt;ScRiPt&gt;alert(&quot;x&quot;)&lt;/sCrIpT&gt; &amp; &#39; &lt;/style&gt;';
+  assert.equal(reporting.toHtml(input, context(payload)), template.replaceAll(marker, escaped));
+  assert.ok(template.includes('<dt>Expected grade</dt><dd>PASS</dd>'));
+  assert.ok(template.includes('<dt>Actual grade</dt><dd class="fail">FAIL</dd>'));
+  assert.ok(template.includes('Evidence verification: NOT VERIFIED'));
+  assert.match(template, /<strong>0 \/ 1<\/strong> runs passed/);
+  assert.deepEqual(input, original);
+});
+
+test('demo context requires one run so its actual grade cannot hide a missing or additional run', () => {
+  const context = { scenario: 'Example', policy: 'Example', expectedPassed: true,
+    verification: { matched: true, problems: [] } };
+  for (const runs of [[], [run(true), run(false)]]) {
+    assert.throws(() => reporting.toHtml(report(runs), context), /exactly one run/i);
+  }
+});
+
 test('writeHtml creates a standalone artifact and propagates write failures', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'faultline-html-'));
   t.after(() => rm(dir, { recursive: true, force: true }));

@@ -122,6 +122,14 @@ it means that the negative control and the successful retry matched their eviden
 
 ### Demo exit codes and limits
 
+Each demo HTML report opens with its scenario, policy, expected grade, actual
+grade, and the existing verifier's **VERIFIED / NOT VERIFIED** evidence result
+for that policy. Negative controls explain the expected duplicate write or
+missing file; a verified control still has an actual **FAIL** grade. Missing or
+contradictory evidence cannot be verified just because the grade matches.
+This context is supplied when the demo writes HTML; JSON and Markdown stay
+unchanged. Converting saved JSON with `report` does not reconstruct demo context.
+
 Both scenarios use the same exit codes (scoped to `demo`):
 
 - **0:** both expected outcomes, the scenario's applied timeout, completed writes, and

@@ -11,6 +11,26 @@ import { parse, stringify } from 'yaml';
 const execute = promisify(execFile);
 const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
+function assertDemoContext(html, { scenario, policy, expected, actual, verified, negativeControl }) {
+  const start = html.indexOf('<section id="demo-context"');
+  assert.ok(start >= 0, 'standalone demo HTML must explain its context');
+  const end = html.indexOf('</section>', start);
+  assert.ok(end < html.indexOf('<section aria-label="Overall results"'), 'context must precede results, outside disclosures');
+  const context = html.slice(start, end);
+  assert.ok(context.includes('Scripted local filesystem demo'));
+  assert.ok(context.includes(`<dt>Scenario</dt><dd>${scenario}</dd>`));
+  assert.ok(context.includes(`<dt>Policy</dt><dd>${policy}</dd>`));
+  assert.ok(context.includes(`<dt>Expected grade</dt><dd>${expected}</dd>`));
+  assert.ok(context.includes(`<dt>Actual grade</dt><dd class="${actual === 'PASS' ? 'pass' : 'fail'}">${actual}</dd>`));
+  assert.ok(context.includes(`Evidence verification: ${verified ? 'VERIFIED' : 'NOT VERIFIED'}`));
+  assert.ok(context.includes('not evidence of real model behavior'));
+  if (negativeControl) {
+    assert.ok(context.includes(negativeControl));
+    assert.ok(context.includes('not successful task completion'));
+  }
+  return context;
+}
+
 async function workspace(t) {
   const cwd = await mkdtemp(join(tmpdir(), 'faultline-demo-'));
   t.after(() => rm(cwd, { recursive: true, force: true }));
@@ -48,6 +68,13 @@ test('demo CLI verifies both expected outcomes from an unrelated directory', asy
     assert.equal(report.stats.byFault.timeout.passed, passed ? 1 : 0);
     assert.match(await readFile(join(directory, 'report.md'), 'utf8'), passed ? /PASS/ : /FAIL/);
     const html = await readFile(join(directory, 'report.html'), 'utf8');
+    assertDemoContext(html, {
+      scenario: 'Lost acknowledgement', policy: passed ? 'Verify before retry' : 'Naive retry',
+      expected: passed ? 'PASS' : 'FAIL', actual: passed ? 'PASS' : 'FAIL', verified: true,
+      negativeControl: passed ? undefined : 'duplicate write',
+    });
+    assert.deepEqual(Object.keys(report).sort(), ['meta', 'runs', 'stats']);
+    assert.deepEqual(Object.keys(report.meta).sort(), ['durationMs', 'generatedAt', 'runsPerTask', 'taskCount']);
     assert.match(html, passed ? /<strong>1 \/ 1<\/strong> runs passed/ : /<strong>0 \/ 1<\/strong> runs passed/);
     assert.doesNotMatch(html, /<(?:script|img|link|iframe)\b|@import|url\(/i);
     for (const name of ['report.json', 'report.md', 'report.html']) assert.ok(result.stdout.includes(join(directory, name)));
@@ -89,6 +116,13 @@ test('transient-timeout CLI verifies a missing file versus one completed write f
     assert.equal(report.stats.unknownFaultRuns, 0);
     assert.match(await readFile(join(directory, 'report.md'), 'utf8'), passed ? /PASS/ : /FAIL/);
     const html = await readFile(join(directory, 'report.html'), 'utf8');
+    assertDemoContext(html, {
+      scenario: 'Transient timeout', policy: passed ? 'Retry once' : 'Stop on timeout',
+      expected: passed ? 'PASS' : 'FAIL', actual: passed ? 'PASS' : 'FAIL', verified: true,
+      negativeControl: passed ? undefined : 'missing file',
+    });
+    assert.deepEqual(Object.keys(report).sort(), ['meta', 'runs', 'stats']);
+    assert.deepEqual(Object.keys(report.meta).sort(), ['durationMs', 'generatedAt', 'runsPerTask', 'taskCount']);
     assert.match(html, passed ? /<strong>1 \/ 1<\/strong> runs passed/ : /<strong>0 \/ 1<\/strong> runs passed/);
     assert.doesNotMatch(html, /<(?:script|img|link|iframe)\b|@import|url\(/i);
     for (const name of ['report.json', 'report.md', 'report.html']) assert.ok(result.stdout.includes(join(directory, name)));
@@ -135,6 +169,11 @@ test('transient CLI rejects missing injections and unrelated failures as demonst
         assert.equal(report.runs[0].trajectory.calls.length, 1);
         assert.deepEqual(report.runs[0].injectedFaults, []);
         assert.equal(report.stats.withoutFault.passed, 1);
+        const context = assertDemoContext(await readFile(join(directory, 'report.html'), 'utf8'), {
+          scenario: 'Transient timeout', policy: policy === 'retry-once' ? 'Retry once' : 'Stop on timeout',
+          expected: policy === 'retry-once' ? 'PASS' : 'FAIL', actual: 'PASS', verified: false,
+        });
+        assert.ok(context.includes('Expected exactly one applied instead-timeout'));
       }
     }
   });
@@ -199,6 +238,16 @@ test('transient CLI rejects an unrelated read error whose path contains ENOENT',
   assert.match(stop.grade.stateResults.find(result => result.type === 'file_contains').message, /^EACCES:.*ENOENT/);
   const retry = JSON.parse(await readFile(join(out, 'retry-once', 'report.json'), 'utf8')).runs[0];
   assert.equal(retry.grade.passed, true);
+  // The negative grade still matches, but unrelated error evidence cannot verify it.
+  const context = assertDemoContext(await readFile(join(out, 'stop-on-timeout', 'report.html'), 'utf8'), {
+    scenario: 'Transient timeout', policy: 'Stop on timeout',
+    expected: 'FAIL', actual: 'FAIL', verified: false, negativeControl: 'missing file',
+  });
+  assert.ok(context.includes('not an unrelated error'));
+  // The other policy's evidence is independently valid even though the command exits 1.
+  assertDemoContext(await readFile(join(out, 'retry-once', 'report.html'), 'utf8'), {
+    scenario: 'Transient timeout', policy: 'Retry once', expected: 'PASS', actual: 'PASS', verified: true,
+  });
 });
 
 test('real CLI exits 1 for missing faults and unexpected passes, preserving truthful reports', async t => {
@@ -215,6 +264,11 @@ test('real CLI exits 1 for missing faults and unexpected passes, preserving trut
     assert.equal(report.runs[0].trajectory.calls.length, 1);
     assert.deepEqual(report.runs[0].injectedFaults, []);
     assert.equal(report.stats.withoutFault.passed, 1);
+    const context = assertDemoContext(await readFile(join(out, policy, 'report.html'), 'utf8'), {
+      scenario: 'Lost acknowledgement', policy: policy === 'naive' ? 'Naive retry' : 'Verify before retry',
+      expected: policy === 'naive' ? 'FAIL' : 'PASS', actual: 'PASS', verified: false,
+    });
+    assert.ok(context.includes('Expected exactly one applied after-timeout'));
   }
 });
 

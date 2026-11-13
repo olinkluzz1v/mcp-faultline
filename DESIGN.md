@@ -19,6 +19,9 @@ there is no application framework, component library or second stylesheet.
 
 Reading order: header and section links → overall summary → fault comparison →
 task comparison and sampling caveats → native run disclosures → provenance.
+Demo reports insert a visible scenario/policy and evidence-verification section
+before the overall summary. Keep expected outcomes separate from actual grades;
+an expected negative control retains its FAIL label even when verified.
 All rows remain in the portable document; use browser Find and section links
 for navigation. Disclosure content is collapsed initially. Tables have captions,
 scoped headers and a keyboard-focusable horizontal scroll region on narrow
