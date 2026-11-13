@@ -176,6 +176,24 @@ Historical INVALID attempts and the limits of these four observations are retain
 in the [example guide](examples/codex-ticket/README.md). Normal CI uses scripted
 controls and needs no model credentials.
 
+For one predetermined baseline followed by three fresh fault evaluations:
+
+```bash
+node examples/codex-ticket/batch.mjs --model gpt-6.1-sol --fault-runs 3 --out reports/codex-ticket-batch-01
+```
+
+Use a new output directory. The batch freezes one prompt, runs sequentially, and
+retains every result in `batch.json`, an offline `report.html`, and separate
+`runs/` evidence directories. Valid FAILs continue; INVALID, infrastructure errors
+and interruptions stop scheduling and leave remaining entries **NOT RUN**.
+Exit `0` requires all planned evaluations to pass and aggregate reports to be
+written; `1` means all completed validly with at least one FAIL; `2` means invalid,
+incomplete or failed infrastructure/output. See the
+[batch guide](examples/codex-ticket/README.md#batch-regression-workflow) for limits
+and provenance. This batch workflow has offline scripted coverage; **live batch
+validation is pending**. The historical four live observations above used the
+single-run launcher.
+
 ### Run the suite and convert reports
 
 ```bash
@@ -389,8 +407,7 @@ The bench measures whether the agent can solve the task. The chaos tool injects 
 
 Honest list. These are the things that are not done yet.
 
-- **Mode A only.** We grade what the agent attempted, not what the consequences were. Mode B is future work.
-- **File-based side effects only.** Network calls, emails, git commits are not tracked.
+- **Independent outcome checks are scoped.** Embedded tasks check local filesystem state; the Codex ticket example checks independent local fixture state and its creation ledger. Arbitrary remote-service outcomes, emails and git commits are not verified.
 - **Live validation is scoped.** One local baseline and three fault runs passed for the [Codex ticket example](examples/codex-ticket/README.md). They do not establish general model resilience, compatibility with other versions/models, or remote exactly-once guarantees. CI uses scripted controls.
 - **No LLM judge.** Everything is deterministic. No model in the grading loop.
 - **Fault statistics are observational.** Mixed-fault runs contribute to multiple groups; the report does not identify which fault caused a failure. Older runs without injection metadata are marked as unknown.
@@ -415,6 +432,7 @@ npm run test:report             # fault statistics, provenance, output and CLI
 npm run test:demo               # local recovery demo, evidence and CLI exit behavior
 npm run test:run                # batch exit codes, validation and interruption
 npm run test:codex-ticket       # offline scripted ticket controls; no Codex/model needed
+npm run test:codex-ticket-batch # sequential regression workflow; scripted controls only
 npm test                        # smoke, agent, reporting, demo and run checks (build first)
 ```
 
